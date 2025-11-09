@@ -34,8 +34,8 @@ jobs:
         python dpdc_automation.py
       continue-on-error: true
     
-    - name: Upload screenshots
-      uses: actions/upload-artifact@v3
+    - name: Upload screenshots and debug files
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: debug-screenshots
