@@ -4,7 +4,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -26,9 +25,12 @@ class DPDCAutomation:
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
         
+        # Use system ChromeDriver (installed by GitHub Actions)
+        service = Service('/usr/bin/chromedriver')
+        
         # Initialize Chrome driver
         self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
+            service=service,
             options=chrome_options
         )
         self.wait = WebDriverWait(self.driver, 20)
