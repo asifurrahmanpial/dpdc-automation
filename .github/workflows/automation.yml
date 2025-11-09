@@ -13,7 +13,7 @@ on:
     # └─────────── Minute (0-59)
     - cron: '0 9,21 * * *'
   
-  # Allow manual trigger
+ # Allow manual trigger
   workflow_dispatch:
 
 jobs:
@@ -45,3 +45,14 @@ jobs:
         SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
       run: |
         python dpdc_automation.py
+    
+    - name: Upload debug files on failure
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: failure-debug-${{ github.run_number }}
+        path: |
+          *.png
+          *.html
+          *.txt
+        retention-days: 3
