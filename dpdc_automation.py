@@ -4,12 +4,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.keys import Keys
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import json
 import time
 import os
+import re
 
 class DPDCAutomation:
     def __init__(self):
@@ -23,7 +25,10 @@ class DPDCAutomation:
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        chrome_options.add_experimental_option('useAutomationExtension', False)
+        chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
         # Use system ChromeDriver (installed by GitHub Actions)
         service = Service('/usr/bin/chromedriver')
@@ -33,7 +38,11 @@ class DPDCAutomation:
             service=service,
             options=chrome_options
         )
-        self.wait = WebDriverWait(self.driver, 20)
+        
+        # Remove webdriver flag
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        
+        self.wait = WebDriverWait(self.driver, 30)
         
         # Initialize Google Sheets
         self.setup_google_sheets()
@@ -69,77 +78,108 @@ class DPDCAutomation:
             # Navigate to DPDC website
             print("   Opening DPDC website...")
             self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
-            time.sleep(5)  # Wait for page to load
             
-            # Try to find and fill customer number input
-            print("   Looking for customer number input...")
+            # Wait longer for page to fully load
+            time.sleep(8)
             
-            # Multiple possible selectors for the input field
-            possible_selectors = [
-                'input[placeholder*="Customer"]',
-                'input[placeholder*="customer"]',
-                'input[name*="customer"]',
-                'input[name*="accountNo"]',
-                'input[type="text"]',
-                'input[type="number"]'
-            ]
+            # Save initial page screenshot
+            self.driver.save_screenshot('page_loaded.png')
+            print("   ✓ Page loaded, screenshot saved")
+            
+            # Print page source for debugging
+            page_source = self.driver.page_source
+            print(f"   Page title: {self.driver.title}")
+            
+            # Try to find customer number input with multiple strategies
+            print("   Looking for customer number input field...")
             
             customer_input = None
-            for selector in possible_selectors:
+            
+            # Strategy 1: Try by placeholder text
+            try:
+                customer_input = self.wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'Customer') or contains(@placeholder, 'customer') or contains(@placeholder, 'Account') or contains(@placeholder, 'account')]"))
+                )
+                print("   ✓ Found input by placeholder")
+            except:
+                pass
+            
+            # Strategy 2: Try by input type and attributes
+            if not customer_input:
                 try:
-                    customer_input = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if customer_input:
-                        print(f"   ✓ Found input field with selector: {selector}")
-                        break
-                except:
-                    continue
+                    inputs = self.driver.find_elements(By.TAG_NAME, 'input')
+                    for inp in inputs:
+                        input_type = inp.get_attribute('type')
+                        input_name = inp.get_attribute('name')
+                        input_id = inp.get_attribute('id')
+                        
+                        print(f"   Found input: type={input_type}, name={input_name}, id={input_id}")
+                        
+                        # Look for text or number inputs
+                        if input_type in ['text', 'number', 'tel']:
+                            if inp.is_displayed():
+                                customer_input = inp
+                                print(f"   ✓ Using input: {input_name or input_id}")
+                                break
+                except Exception as e:
+                    print(f"   Could not find input: {e}")
             
             if not customer_input:
-                raise Exception("Could not find customer number input field")
+                # Save page source for debugging
+                with open('page_source.html', 'w', encoding='utf-8') as f:
+                    f.write(page_source)
+                raise Exception("Could not find customer number input field. Check page_source.html for debugging")
             
             # Clear and enter customer number
+            print(f"   Entering customer number: {customer_number}")
+            customer_input.click()
+            time.sleep(1)
             customer_input.clear()
+            time.sleep(1)
             customer_input.send_keys(customer_number)
-            print(f"   ✓ Entered customer number")
             time.sleep(2)
             
+            # Take screenshot after entering
+            self.driver.save_screenshot('after_input.png')
+            print("   ✓ Customer number entered")
+            
             # Find and click search/submit button
-            print("   Looking for search button...")
+            print("   Looking for search/submit button...")
             
-            possible_button_selectors = [
-                'button[type="submit"]',
-                'button:contains("Search")',
-                'button:contains("Submit")',
-                'button.btn-primary',
-                'button[class*="search"]',
-                'input[type="submit"]'
-            ]
+            button_clicked = False
             
-            search_button = None
-            for selector in possible_button_selectors:
-                try:
-                    search_button = self.driver.find_element(By.CSS_SELECTOR, selector)
-                    if search_button:
-                        print(f"   ✓ Found button with selector: {selector}")
+            # Try to find button by text
+            try:
+                buttons = self.driver.find_elements(By.TAG_NAME, 'button')
+                for btn in buttons:
+                    btn_text = btn.text.lower()
+                    print(f"   Found button: {btn.text}")
+                    if any(word in btn_text for word in ['search', 'submit', 'find', 'get']):
+                        btn.click()
+                        print(f"   ✓ Clicked button: {btn.text}")
+                        button_clicked = True
                         break
-                except:
-                    continue
+            except Exception as e:
+                print(f"   Button click attempt failed: {e}")
             
-            if search_button:
-                search_button.click()
-                print("   ✓ Clicked search button")
-            else:
-                # Try pressing Enter on input field
-                from selenium.webdriver.common.keys import Keys
+            # If no button found, press Enter
+            if not button_clicked:
+                print("   No button found, pressing Enter...")
                 customer_input.send_keys(Keys.RETURN)
                 print("   ✓ Pressed Enter")
             
-            # Wait for results
+            # Wait for results to load
             print("   Waiting for results...")
-            time.sleep(8)
+            time.sleep(10)
             
-            # Take screenshot for debugging
-            self.driver.save_screenshot('debug_screenshot.png')
+            # Take screenshot of results
+            self.driver.save_screenshot('results.png')
+            
+            # Check for error messages
+            page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+            if 'no results found' in page_text.lower() or 'oops' in page_text.lower():
+                print("   ⚠ Warning: 'No results found' message detected")
+                print(f"   Page text snippet: {page_text[:200]}")
             
             # Try to scrape data from the page
             data = self.scrape_page_data()
@@ -150,6 +190,9 @@ class DPDCAutomation:
             print(f"✗ Error fetching data: {e}")
             # Save screenshot on error
             self.driver.save_screenshot('error_screenshot.png')
+            # Save page source for debugging
+            with open('error_page_source.html', 'w', encoding='utf-8') as f:
+                f.write(self.driver.page_source)
             raise
     
     def scrape_page_data(self):
@@ -157,7 +200,8 @@ class DPDCAutomation:
         try:
             print("   Extracting data from page...")
             
-            # Get all text from page
+            # Get page source
+            page_source = self.driver.page_source
             page_text = self.driver.find_element(By.TAG_NAME, 'body').text
             
             # Initialize data structure
@@ -174,39 +218,95 @@ class DPDCAutomation:
                 'minRecharge': ''
             }
             
-            # Try to find specific elements (you may need to adjust these selectors)
-            selectors = {
-                'accountId': ['[class*="account"]', '[data-testid*="account"]', 'span:contains("Account")'],
-                'customerName': ['[class*="name"]', '[data-testid*="name"]'],
-                'balanceRemaining': ['[class*="balance"]', '[class*="amount"]', '[data-testid*="balance"]'],
-                'connectionStatus': ['[class*="status"]', '[data-testid*="status"]'],
-            }
+            # Try multiple strategies to find data
             
-            for field, selector_list in selectors.items():
-                for selector in selector_list:
-                    try:
-                        element = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        if element and element.text:
-                            data[field] = element.text.strip()
-                            break
-                    except:
-                        continue
+            # Strategy 1: Look for common label-value patterns
+            try:
+                # Find all divs, spans, paragraphs that might contain data
+                elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), 'Account') or contains(text(), 'Balance') or contains(text(), 'Name') or contains(text(), 'Status')]")
+                
+                for element in elements:
+                    text = element.text
+                    print(f"   Found element with text: {text[:100]}")
+                    
+                    # Try to extract key-value pairs
+                    if ':' in text:
+                        parts = text.split(':')
+                        if len(parts) == 2:
+                            key = parts[0].strip().lower()
+                            value = parts[1].strip()
+                            
+                            if 'account' in key and 'id' in key:
+                                data['accountId'] = value
+                            elif 'name' in key:
+                                data['customerName'] = value
+                            elif 'balance' in key:
+                                data['balanceRemaining'] = value
+                            elif 'status' in key:
+                                data['connectionStatus'] = value
+                            elif 'mobile' in key or 'phone' in key:
+                                data['mobileNumber'] = value
+                            elif 'email' in key:
+                                data['emailId'] = value
+            except Exception as e:
+                print(f"   Error in strategy 1: {e}")
             
-            # If we couldn't find specific elements, try to extract from page text
+            # Strategy 2: Look for specific CSS classes or IDs
+            try:
+                # Common class patterns
+                class_patterns = [
+                    'account', 'customer', 'balance', 'amount', 
+                    'status', 'name', 'mobile', 'email'
+                ]
+                
+                for pattern in class_patterns:
+                    elements = self.driver.find_elements(By.CSS_SELECTOR, f'[class*="{pattern}"]')
+                    for element in elements:
+                        if element.text and len(element.text) > 0:
+                            print(f"   Found {pattern}: {element.text[:50]}")
+            except Exception as e:
+                print(f"   Error in strategy 2: {e}")
+            
+            # Strategy 3: Use regex to extract common patterns
+            try:
+                # Look for account numbers (usually numeric)
+                account_match = re.search(r'Account.*?:?\s*(\d{8,})', page_text, re.IGNORECASE)
+                if account_match:
+                    data['accountId'] = account_match.group(1)
+                
+                # Look for balance amounts
+                balance_match = re.search(r'Balance.*?:?\s*([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+                if balance_match:
+                    data['balanceRemaining'] = balance_match.group(1)
+                
+                # Look for mobile numbers
+                mobile_match = re.search(r'Mobile.*?:?\s*(\d{11})', page_text, re.IGNORECASE)
+                if mobile_match:
+                    data['mobileNumber'] = mobile_match.group(1)
+                    
+            except Exception as e:
+                print(f"   Error in strategy 3: {e}")
+            
+            # If no data found, store page text for manual inspection
             if not any(data.values()):
-                print("   ⚠ Could not find specific elements, using page text")
-                # This is a fallback - page text will be stored
-                data['customerName'] = page_text[:100]  # Store first 100 chars as a record
+                print("   ⚠ Could not find structured data, storing page text")
+                # Store snippet of page text
+                data['customerName'] = page_text[:200].replace('\n', ' ').strip()
+                
+                # Save full page text to file for debugging
+                with open('page_text.txt', 'w', encoding='utf-8') as f:
+                    f.write(page_text)
+                print("   Full page text saved to page_text.txt")
             
-            print(f"   ✓ Data extracted: {data}")
+            print(f"   ✓ Data extracted: {json.dumps(data, indent=2)}")
             return data
             
         except Exception as e:
-            print(f"   ⚠ Error scraping page: {e}")
-            # Return empty data rather than failing
+            print(f"   ✗ Error scraping page: {e}")
+            # Return error data rather than failing
             return {
                 'accountId': '',
-                'customerName': 'Error extracting data',
+                'customerName': f'Error extracting data: {str(e)}',
                 'customerClass': '',
                 'mobileNumber': '',
                 'emailId': '',
@@ -286,6 +386,8 @@ class DPDCAutomation:
             print("\n" + "="*60)
             print(f"✗ Automation failed: {e}")
             print("="*60)
+            import traceback
+            traceback.print_exc()
             return False
             
         finally:
