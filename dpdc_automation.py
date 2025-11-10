@@ -15,22 +15,49 @@ import re
 
 class DPDCAutomation:
     def __init__(self):
-        """Initialize the automation"""
-        print("🚀 Initializing DPDC Automation...")
+        """Initialize with browser settings to avoid CAPTCHA"""
+        print("🚀 Initializing DPDC Automation with CAPTCHA bypass settings...")
         
-        # Set up Chrome options for headless mode
+        # Set up Chrome options to appear as a real user
         chrome_options = Options()
+        
+        # IMPORTANT: Run in non-headless mode initially to accept permissions
+        # Then we can use headless in subsequent runs
         chrome_options.add_argument('--headless')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-gpu')
+        
+        # Enable geolocation
+        chrome_options.add_argument('--enable-geolocation')
+        
+        # Set a realistic window size
         chrome_options.add_argument('--window-size=1920,1080')
+        
+        # Disable automation flags
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
+        
+        # Set realistic user agent
         chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         
-        # Use system ChromeDriver (installed by GitHub Actions)
+        # Accept all cookies and permissions
+        chrome_options.add_experimental_option("prefs", {
+            "profile.default_content_setting_values.cookies": 1,  # Allow all cookies
+            "profile.default_content_setting_values.geolocation": 1,  # Allow geolocation
+            "profile.default_content_setting_values.notifications": 1,  # Allow notifications
+            "profile.default_content_setting_values.media_stream": 1,  # Allow camera/mic
+            "profile.cookie_controls_mode": 0,  # Allow all cookies
+            "profile.block_third_party_cookies": False,  # Allow third-party cookies
+        })
+        
+        # Use persistent user data directory to save cookies between runs
+        # This makes the browser remember the site and avoid CAPTCHA in future
+        user_data_dir = '/tmp/chrome-user-data'
+        chrome_options.add_argument(f'--user-data-dir={user_data_dir}')
+        chrome_options.add_argument('--profile-directory=Default')
+        
+        # Use system ChromeDriver
         service = Service('/usr/bin/chromedriver')
         
         # Initialize Chrome driver
@@ -39,10 +66,43 @@ class DPDCAutomation:
             options=chrome_options
         )
         
-        # Remove webdriver flag
+        # Remove webdriver detection
         self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
         
+        # Set geolocation to Bangladesh (Dhaka)
+        self.driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+            "latitude": 23.8103,
+            "longitude": 90.4125,
+            "accuracy": 100
+        })
+        
+        # Add more realistic browser properties
+        self.driver.execute_script("""
+            // Make the browser appear more real
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en', 'bn']
+            });
+            Object.defineProperty(navigator, 'platform', {
+                get: () => 'Win32'
+            });
+            Object.defineProperty(navigator, 'hardwareConcurrency', {
+                get: () => 8
+            });
+            window.chrome = {
+                runtime: {}
+            };
+        """)
+        
         self.wait = WebDriverWait(self.driver, 30)
+        
+        print("✓ Browser initialized with human-like settings")
+        print("  - Cookies: Enabled")
+        print("  - Location: Bangladesh (Dhaka)")
+        print("  - User Agent: Real browser")
+        print("  - Persistent session: Enabled")
         
         # Initialize Google Sheets
         self.setup_google_sheets()
@@ -50,12 +110,10 @@ class DPDCAutomation:
     def setup_google_sheets(self):
         """Set up Google Sheets connection"""
         try:
-            # Create credentials from JSON stored in secrets
             credentials_json = os.environ.get('GOOGLE_CREDENTIALS')
             if not credentials_json:
                 raise Exception("GOOGLE_CREDENTIALS not found in environment")
             
-            # Parse JSON and create credentials
             creds_dict = json.loads(credentials_json)
             scopes = [
                 'https://www.googleapis.com/auth/spreadsheets',
@@ -70,222 +128,298 @@ class DPDCAutomation:
             print(f"✗ Error setting up Google Sheets: {e}")
             raise
     
-    def navigate_to_quick_pay(self):
-        """Navigate through login page to Quick Pay"""
+    def build_trust_with_site(self):
+        """Build trust by browsing the site naturally before automation"""
         try:
-            print("\n🌐 Navigating to DPDC website...")
+            print("\n🌐 Building trust with DPDC website...")
             
-            # Step 1: Go to login page (which is the landing page)
-            print("   Step 1: Opening login page...")
+            # Step 1: Visit homepage first (like a real user)
+            print("   Step 1: Visiting homepage...")
+            self.driver.get('https://amiapp.dpdc.org.bd/')
+            time.sleep(3)
+            
+            # Scroll a bit (human behavior)
+            self.driver.execute_script("window.scrollTo(0, 300);")
+            time.sleep(1)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            time.sleep(1)
+            
+            # Step 2: Accept any cookie banners if present
+            print("   Step 2: Looking for cookie consent...")
+            try:
+                # Common cookie banner button selectors
+                cookie_buttons = [
+                    "//button[contains(text(), 'Accept')]",
+                    "//button[contains(text(), 'I agree')]",
+                    "//button[contains(text(), 'OK')]",
+                    "//button[contains(@class, 'accept')]",
+                    "//a[contains(text(), 'Accept')]"
+                ]
+                
+                for selector in cookie_buttons:
+                    try:
+                        button = self.driver.find_element(By.XPATH, selector)
+                        if button.is_displayed():
+                            button.click()
+                            print("   ✓ Accepted cookies")
+                            time.sleep(1)
+                            break
+                    except:
+                        continue
+            except:
+                print("   No cookie banner found (already accepted)")
+            
+            # Step 3: Set cookies manually to mark as trusted
+            print("   Step 3: Setting trust cookies...")
+            cookies = [
+                {'name': 'cookieConsent', 'value': 'accepted', 'domain': '.dpdc.org.bd'},
+                {'name': 'user_preference', 'value': 'trusted', 'domain': '.dpdc.org.bd'},
+            ]
+            
+            for cookie in cookies:
+                try:
+                    self.driver.add_cookie(cookie)
+                except:
+                    pass  # Cookie might already exist or domain might be different
+            
+            print("   ✓ Trust building complete")
+            time.sleep(2)
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ⚠️  Trust building warning: {e}")
+            return True  # Continue anyway
+    
+    def navigate_to_quick_pay(self):
+        """Navigate to Quick Pay page"""
+        try:
+            print("\n📍 Navigating to Quick Pay...")
+            
+            # Visit login page first
+            print("   Opening login page...")
             self.driver.get('https://amiapp.dpdc.org.bd/login')
-            time.sleep(5)
+            time.sleep(4)
             self.driver.save_screenshot('step1_login_page.png')
-            print(f"   ✓ Login page loaded. Current URL: {self.driver.current_url}")
             
-            # Step 2: Find and click Quick Pay button
-            print("   Step 2: Looking for Quick Pay button...")
+            # Look for Quick Pay button
+            print("   Looking for Quick Pay button...")
             
-            quick_pay_button = None
-            
-            # Try multiple selectors for Quick Pay button
-            selectors = [
+            quick_pay_selectors = [
                 "//button[contains(text(), 'Quick Pay')]",
                 "//button[contains(text(), 'QUICK PAY')]",
                 "//a[contains(text(), 'Quick Pay')]",
                 "//a[contains(text(), 'QUICK PAY')]",
                 "//button[contains(@class, 'quick')]",
-                "//a[contains(@class, 'quick')]",
-                "//div[contains(text(), 'Quick Pay')]",
-                "//span[contains(text(), 'Quick Pay')]"
+                "//a[contains(@href, 'quick-pay')]",
+                "//*[contains(text(), 'Quick Pay')]"
             ]
             
-            for selector in selectors:
+            quick_pay_button = None
+            for selector in quick_pay_selectors:
                 try:
                     element = self.driver.find_element(By.XPATH, selector)
                     if element.is_displayed():
                         quick_pay_button = element
-                        print(f"   ✓ Found Quick Pay button with selector: {selector}")
                         break
                 except:
                     continue
             
-            if not quick_pay_button:
-                # Try to find it by looking at all clickable elements
-                print("   Looking through all buttons and links...")
-                buttons = self.driver.find_elements(By.TAG_NAME, 'button')
-                links = self.driver.find_elements(By.TAG_NAME, 'a')
-                
-                for element in buttons + links:
-                    text = element.text.lower()
-                    if 'quick' in text and 'pay' in text:
-                        quick_pay_button = element
-                        print(f"   ✓ Found Quick Pay button: {element.text}")
-                        break
-            
             if quick_pay_button:
-                # Scroll to button and click
-                self.driver.execute_script("arguments[0].scrollIntoView(true);", quick_pay_button)
+                # Scroll to button naturally
+                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", quick_pay_button)
                 time.sleep(1)
+                
+                # Move mouse to it (simulate human)
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(quick_pay_button).perform()
+                time.sleep(0.5)
+                
                 quick_pay_button.click()
                 print("   ✓ Clicked Quick Pay button")
-                time.sleep(5)
-                
-                self.driver.save_screenshot('step2_quick_pay_page.png')
-                print(f"   ✓ Quick Pay page loaded. Current URL: {self.driver.current_url}")
-                return True
+                time.sleep(4)
             else:
-                # If button not found, try to navigate directly
-                print("   ⚠ Quick Pay button not found, trying direct navigation...")
+                print("   Quick Pay button not found, navigating directly...")
                 self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
-                time.sleep(5)
-                self.driver.save_screenshot('step2_direct_navigation.png')
-                print(f"   ✓ Navigated directly. Current URL: {self.driver.current_url}")
-                return True
+                time.sleep(4)
+            
+            self.driver.save_screenshot('step2_quick_pay_page.png')
+            print("   ✓ Quick Pay page loaded")
+            return True
                 
         except Exception as e:
-            print(f"   ✗ Error navigating: {e}")
+            print(f"   ✗ Navigation error: {e}")
             self.driver.save_screenshot('navigation_error.png')
             raise
+    
+    def check_if_captcha_present(self):
+        """Check if CAPTCHA is present on the page"""
+        try:
+            # Look for reCAPTCHA iframe
+            captcha_iframe = self.driver.find_element(By.XPATH, "//iframe[contains(@src, 'recaptcha')]")
+            if captcha_iframe.is_displayed():
+                print("   ⚠️  CAPTCHA is present")
+                return True
+        except:
+            print("   ✓ No CAPTCHA detected!")
+            return False
+        
+        return False
     
     def fetch_usage_data(self, customer_number):
         """Fetch usage data from DPDC website"""
         try:
             print(f"\n📡 Fetching data for customer: {customer_number}")
             
-            # Navigate to Quick Pay page
+            # Build trust first
+            self.build_trust_with_site()
+            
+            # Navigate to Quick Pay
             self.navigate_to_quick_pay()
             
-            # Now we should be on the Quick Pay page
+            # Wait a bit for page to fully load
             time.sleep(3)
             
-            # Try to find customer number input field
-            print("   Step 3: Looking for customer number input field...")
+            # Find customer number input
+            print("   Step 3: Locating customer number input...")
             
             customer_input = None
+            input_selectors = [
+                "//input[contains(@placeholder, 'Customer')]",
+                "//input[contains(@placeholder, 'customer')]",
+                "//input[contains(@placeholder, 'Number')]",
+                "//input[@type='text']",
+                "//input[@type='number']"
+            ]
             
-            # Strategy 1: Try by placeholder text
-            try:
-                customer_input = self.wait.until(
-                    EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, 'Customer') or contains(@placeholder, 'customer') or contains(@placeholder, 'Account') or contains(@placeholder, 'account') or contains(@placeholder, 'Number') or contains(@placeholder, 'number')]"))
-                )
-                print("   ✓ Found input by placeholder")
-            except:
-                pass
-            
-            # Strategy 2: Try all visible text/number inputs
-            if not customer_input:
+            for selector in input_selectors:
                 try:
-                    inputs = self.driver.find_elements(By.TAG_NAME, 'input')
-                    print(f"   Found {len(inputs)} input fields")
-                    
-                    for inp in inputs:
-                        if not inp.is_displayed():
-                            continue
-                            
-                        input_type = inp.get_attribute('type')
-                        input_name = inp.get_attribute('name')
-                        input_id = inp.get_attribute('id')
-                        input_placeholder = inp.get_attribute('placeholder')
-                        
-                        print(f"   Input: type={input_type}, name={input_name}, id={input_id}, placeholder={input_placeholder}")
-                        
-                        # Look for text or number inputs
-                        if input_type in ['text', 'number', 'tel']:
-                            customer_input = inp
-                            print(f"   ✓ Using input: {input_name or input_id or input_placeholder}")
-                            break
-                except Exception as e:
-                    print(f"   Could not find input: {e}")
+                    element = self.driver.find_element(By.XPATH, selector)
+                    if element.is_displayed():
+                        customer_input = element
+                        print(f"   ✓ Found input field")
+                        break
+                except:
+                    continue
             
             if not customer_input:
-                # Save page source for debugging
-                with open('page_source.html', 'w', encoding='utf-8') as f:
-                    f.write(self.driver.page_source)
-                self.driver.save_screenshot('no_input_found.png')
+                # Fallback: get all inputs
+                inputs = self.driver.find_elements(By.TAG_NAME, 'input')
+                for inp in inputs:
+                    input_type = inp.get_attribute('type')
+                    if inp.is_displayed() and input_type in ['text', 'number', 'tel']:
+                        customer_input = inp
+                        print(f"   ✓ Found input field (fallback)")
+                        break
+            
+            if not customer_input:
                 raise Exception("Could not find customer number input field")
             
-            # Clear and enter customer number
-            print(f"   Step 4: Entering customer number: {customer_number}")
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", customer_input)
-            time.sleep(1)
-            customer_input.click()
-            time.sleep(1)
-            customer_input.clear()
+            # Enter customer number naturally (like a human)
+            print(f"   Step 4: Entering customer number...")
+            
+            # Scroll to input
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", customer_input)
             time.sleep(1)
             
-            # Type slowly to mimic human behavior
+            # Click the input
+            customer_input.click()
+            time.sleep(0.5)
+            
+            # Clear if needed
+            customer_input.clear()
+            time.sleep(0.3)
+            
+            # Type slowly (human-like)
             for digit in customer_number:
                 customer_input.send_keys(digit)
-                time.sleep(0.1)
+                time.sleep(0.15)  # Realistic typing speed
             
+            print(f"   ✓ Entered customer number: {customer_number}")
             time.sleep(2)
             self.driver.save_screenshot('step3_after_input.png')
-            print("   ✓ Customer number entered")
             
-            # Find and click search/submit button
-            print("   Step 5: Looking for search/submit button...")
+            # Check if CAPTCHA appeared
+            has_captcha = self.check_if_captcha_present()
             
-            button_clicked = False
-            
-            # Try to find submit button
-            try:
-                buttons = self.driver.find_elements(By.TAG_NAME, 'button')
-                print(f"   Found {len(buttons)} buttons")
+            if has_captcha:
+                print("\n" + "="*60)
+                print("⚠️  CAPTCHA APPEARED DESPITE TRUST SETTINGS")
+                print("="*60)
+                print("This might happen on first run. Options:")
+                print("1. The cookies will be saved for next run")
+                print("2. You might need to run this locally once first")
+                print("3. Or use the paid service ($0.12/month)")
+                print("="*60 + "\n")
                 
-                for btn in buttons:
-                    if not btn.is_displayed():
-                        continue
-                        
-                    btn_text = btn.text.lower()
-                    btn_type = btn.get_attribute('type')
-                    
-                    print(f"   Button: text='{btn.text}', type={btn_type}")
-                    
-                    if btn_type == 'submit' or any(word in btn_text for word in ['search', 'submit', 'find', 'get', 'go']):
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", btn)
-                        time.sleep(1)
-                        btn.click()
-                        print(f"   ✓ Clicked button: {btn.text}")
-                        button_clicked = True
+                # Wait a bit to see if it auto-solves
+                print("   Waiting 30 seconds to see if CAPTCHA auto-solves...")
+                time.sleep(30)
+                self.driver.save_screenshot('step4_captcha_wait.png')
+            
+            # Find and click submit button
+            print("   Step 5: Submitting form...")
+            
+            submit_button = None
+            button_selectors = [
+                "//button[@type='submit']",
+                "//button[contains(text(), 'Submit')]",
+                "//button[contains(text(), 'SUBMIT')]",
+                "//input[@type='submit']",
+                "//button[contains(@class, 'submit')]"
+            ]
+            
+            for selector in button_selectors:
+                try:
+                    element = self.driver.find_element(By.XPATH, selector)
+                    if element.is_displayed():
+                        submit_button = element
                         break
-            except Exception as e:
-                print(f"   Button click attempt failed: {e}")
+                except:
+                    continue
             
-            # If no button found, press Enter
-            if not button_clicked:
-                print("   No button found, pressing Enter...")
+            if submit_button:
+                # Scroll to button
+                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", submit_button)
+                time.sleep(1)
+                
+                # Click naturally
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(submit_button).perform()
+                time.sleep(0.5)
+                
+                submit_button.click()
+                print("   ✓ Submit button clicked")
+            else:
+                print("   No submit button found, pressing Enter...")
                 customer_input.send_keys(Keys.RETURN)
-                print("   ✓ Pressed Enter")
             
-            # Wait for results to load
+            # Wait for results
             print("   Step 6: Waiting for results...")
             time.sleep(10)
             
-            # Take screenshot of results
-            self.driver.save_screenshot('step4_results.png')
+            self.driver.save_screenshot('step5_results.png')
             
-            # Check current URL
-            print(f"   Current URL after search: {self.driver.current_url}")
-            
-            # Check for error messages
+            # Check for errors
             page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-            print(f"   Page text length: {len(page_text)} characters")
             
             if 'no results found' in page_text.lower() or 'oops' in page_text.lower():
-                print("   ⚠ Warning: 'No results found' message detected")
-                with open('error_page_text.txt', 'w', encoding='utf-8') as f:
+                print("   ⚠️  'No results found' message detected")
+                if 'recaptcha' in page_text.lower() or 'robot' in page_text.lower():
+                    print("   This might be due to CAPTCHA blocking")
+                with open('no_results_page.txt', 'w', encoding='utf-8') as f:
                     f.write(page_text)
             
-            # Try to scrape data from the page
+            # Scrape data
             data = self.scrape_page_data()
             
             return data
             
         except Exception as e:
             print(f"✗ Error fetching data: {e}")
-            # Save screenshot on error
             self.driver.save_screenshot('error_screenshot.png')
-            # Save page source for debugging
             with open('error_page_source.html', 'w', encoding='utf-8') as f:
                 f.write(self.driver.page_source)
             import traceback
@@ -297,15 +431,11 @@ class DPDCAutomation:
         try:
             print("   Step 7: Extracting data from page...")
             
-            # Get page source
-            page_source = self.driver.page_source
             page_text = self.driver.find_element(By.TAG_NAME, 'body').text
             
-            # Save for debugging
             with open('page_text.txt', 'w', encoding='utf-8') as f:
                 f.write(page_text)
             
-            # Initialize data structure
             data = {
                 'accountId': '',
                 'customerName': '',
@@ -319,7 +449,7 @@ class DPDCAutomation:
                 'minRecharge': ''
             }
             
-            # Strategy 1: Look for label-value pairs with colons
+            # Parse line by line
             lines = page_text.split('\n')
             for line in lines:
                 if ':' in line:
@@ -328,7 +458,7 @@ class DPDCAutomation:
                         key = parts[0].strip().lower()
                         value = parts[1].strip()
                         
-                        if value:  # Only store non-empty values
+                        if value:
                             if 'account' in key and ('id' in key or 'number' in key):
                                 data['accountId'] = value
                                 print(f"   Found Account ID: {value}")
@@ -346,52 +476,46 @@ class DPDCAutomation:
                                 print(f"   Found Mobile: {value}")
                             elif 'email' in key:
                                 data['emailId'] = value
-                                print(f"   Found Email: {value}")
                             elif 'class' in key:
                                 data['customerClass'] = value
                                 print(f"   Found Class: {value}")
-                            elif 'type' in key:
+                            elif 'type' in key and 'customer' in key:
                                 data['customerType'] = value
-                                print(f"   Found Type: {value}")
             
-            # Strategy 2: Use regex to extract patterns
+            # Regex fallback
             try:
-                # Account numbers (8+ digits)
-                account_match = re.search(r'\b(\d{8,})\b', page_text)
-                if account_match and not data['accountId']:
-                    data['accountId'] = account_match.group(1)
-                    print(f"   Found Account ID via regex: {data['accountId']}")
+                if not data['accountId']:
+                    account_match = re.search(r'\b(\d{8,})\b', page_text)
+                    if account_match:
+                        data['accountId'] = account_match.group(1)
+                        print(f"   Found Account ID (regex): {data['accountId']}")
                 
-                # Balance amounts (numbers with optional decimal)
-                balance_match = re.search(r'(?:Balance|Amount|Due).*?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
-                if balance_match and not data['balanceRemaining']:
-                    data['balanceRemaining'] = balance_match.group(1)
-                    print(f"   Found Balance via regex: {data['balanceRemaining']}")
+                if not data['balanceRemaining']:
+                    balance_match = re.search(r'(?:Balance|Amount|Due).*?([\d,]+\.?\d*)', page_text, re.IGNORECASE)
+                    if balance_match:
+                        data['balanceRemaining'] = balance_match.group(1)
+                        print(f"   Found Balance (regex): {data['balanceRemaining']}")
                 
-                # Mobile numbers (11 digits for Bangladesh)
-                mobile_match = re.search(r'\b(01\d{9})\b', page_text)
-                if mobile_match and not data['mobileNumber']:
-                    data['mobileNumber'] = mobile_match.group(1)
-                    print(f"   Found Mobile via regex: {data['mobileNumber']}")
-                    
+                if not data['mobileNumber']:
+                    mobile_match = re.search(r'\b(01\d{9})\b', page_text)
+                    if mobile_match:
+                        data['mobileNumber'] = mobile_match.group(1)
+                        print(f"   Found Mobile (regex): {data['mobileNumber']}")
             except Exception as e:
-                print(f"   Error in regex extraction: {e}")
+                print(f"   Regex extraction error: {e}")
             
-            # If no data found, store snippet for debugging
+            # Store page snippet if no data found
             if not any(data.values()):
-                print("   ⚠ No structured data found")
-                # Store first 300 chars of relevant text (skip headers/footers)
+                print("   ⚠️  No structured data found, storing page text")
                 clean_text = page_text.replace('\n', ' ').strip()
                 data['customerName'] = clean_text[:300]
             else:
-                print(f"   ✓ Successfully extracted data")
+                print(f"   ✓ Data extraction successful")
             
             return data
             
         except Exception as e:
-            print(f"   ✗ Error scraping page: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"   ✗ Scraping error: {e}")
             return {
                 'accountId': '',
                 'customerName': f'Error: {str(e)}',
@@ -406,15 +530,13 @@ class DPDCAutomation:
             }
     
     def update_google_sheet(self, spreadsheet_id, data):
-        """Update Google Sheet with the fetched data"""
+        """Update Google Sheet"""
         try:
             print("\n📊 Updating Google Sheet...")
             
-            # Open the spreadsheet
             sheet = self.gc.open_by_key(spreadsheet_id)
-            worksheet = sheet.sheet1  # Use first sheet
+            worksheet = sheet.sheet1
             
-            # Prepare row data
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             row_data = [
                 timestamp,
@@ -430,7 +552,6 @@ class DPDCAutomation:
                 data.get('minRecharge', '')
             ]
             
-            # Append to sheet
             worksheet.append_row(row_data)
             print(f"✓ Data added to sheet at {timestamp}")
             
@@ -441,27 +562,23 @@ class DPDCAutomation:
             raise
     
     def run(self):
-        """Main execution method"""
+        """Main execution"""
         try:
             print("\n" + "="*60)
-            print("DPDC Usage Data Automation")
+            print("DPDC Automation (Cookie & Location Trust Method)")
             print(f"Started at: {datetime.now()}")
             print("="*60)
             
-            # Get configuration from environment
             customer_number = os.environ.get('CUSTOMER_NUMBER')
             spreadsheet_id = os.environ.get('SPREADSHEET_ID')
             
             if not customer_number or not spreadsheet_id:
-                raise Exception("Missing required environment variables")
+                raise Exception("Missing environment variables")
             
             print(f"Customer Number: {customer_number}")
             print(f"Spreadsheet ID: {spreadsheet_id[:10]}...")
             
-            # Fetch data
             data = self.fetch_usage_data(customer_number)
-            
-            # Update sheet
             self.update_google_sheet(spreadsheet_id, data)
             
             print("\n" + "="*60)
@@ -479,14 +596,12 @@ class DPDCAutomation:
             return False
             
         finally:
-            # Clean up
             try:
                 self.driver.quit()
                 print("\n🔒 Browser closed")
             except:
                 pass
 
-# Run the automation
 if __name__ == "__main__":
     automation = DPDCAutomation()
     success = automation.run()
