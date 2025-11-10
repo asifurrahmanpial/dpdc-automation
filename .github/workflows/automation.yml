@@ -29,16 +29,16 @@ jobs:
       with:
         python-version: '3.10'
     
-    - name: Install Chrome
+    - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y chromium-browser chromium-chromedriver
+        sudo apt-get install -y chromium-browser chromium-chromedriver ffmpeg
     
     - name: Install Python dependencies
       run: |
         pip install -r requirements.txt
     
-    - name: Run automation
+    - name: Run automation with captcha solver
       env:
         GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         CUSTOMER_NUMBER: ${{ secrets.CUSTOMER_NUMBER }}
