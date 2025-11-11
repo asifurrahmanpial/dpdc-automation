@@ -207,6 +207,21 @@ class DPDCAutomation:
                 self.driver.switch_to.frame(challenge_iframe)
                 print("   ✓ Switched to challenge iframe")
                 self.driver.save_screenshot('captcha_challenge_frame.png')
+                
+                # Check what type of challenge we got
+                try:
+                    # If we see image challenge
+                    image_challenge = self.driver.find_elements(By.CSS_SELECTOR, ".rc-imageselect-target, .rc-imageselect-challenge")
+                    if image_challenge and image_challenge[0].is_displayed():
+                        print("   ℹ Image challenge detected - will attempt to switch to audio")
+                    
+                    # If we see audio challenge already
+                    audio_challenge = self.driver.find_elements(By.ID, "rc-audio")
+                    if audio_challenge and audio_challenge[0].is_displayed():
+                        print("   ℹ Already on audio challenge")
+                except Exception:
+                    pass
+                
             except TimeoutException:
                 print("   ✓ No challenge appeared (auto-solved)")
                 self.driver.switch_to.default_content()
@@ -289,7 +304,19 @@ class DPDCAutomation:
                         self.driver.switch_to.default_content()
                         return False
                 
-                self.random_delay(2, 3)
+                # CRITICAL: Wait for audio challenge UI to fully load
+                print("   Waiting for audio challenge to load...")
+                self.random_delay(3, 5)
+                
+                # Wait for the audio challenge container to be visible
+                try:
+                    audio_challenge = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "rc-audio"))
+                    )
+                    print("   ✓ Audio challenge UI loaded")
+                except TimeoutException:
+                    print("   ⚠ Audio challenge container not found, but continuing...")
+                
                 self.driver.save_screenshot('after_audio_click.png')
                 
             except Exception as e:
@@ -298,38 +325,135 @@ class DPDCAutomation:
                 self.driver.switch_to.default_content()
                 return False
 
-            # Get audio source URL
+            # Get audio source URL - WAIT FOR DYNAMIC LOAD
             try:
                 print("   Step 6: Getting audio source...")
                 
-                # Wait for audio element to appear
-                audio_source = WebDriverWait(self.driver, 8).until(
-                    EC.presence_of_element_located((By.ID, "audio-source"))
-                )
-                audio_url = audio_source.get_attribute('src')
+                audio_url = None
+                
+                # The audio element gets populated dynamically after clicking audio button
+                # We need to wait for the src attribute to be populated
+                print("   Waiting for audio source to be populated...")
+                
+                max_attempts = 15  # Try for up to 15 seconds
+                for attempt in range(max_attempts):
+                    try:
+                        # Strategy 1: Check #audio-source element
+                        audio_source = self.driver.find_element(By.ID, "audio-source")
+                        src = audio_source.get_attribute('src')
+                        
+                        # Check if src is populated and valid
+                        if src and 'payload' in src:
+                            audio_url = src
+                            print(f"   ✓ Got audio URL from #audio-source (attempt {attempt+1}): {audio_url[:80]}...")
+                            break
+                        elif src:
+                            print(f"   ⚠ Found src but not a payload URL: {src[:80]}...")
+                    except NoSuchElementException:
+                        pass
+                    
+                    # Strategy 2: Check any audio tag
+                    if not audio_url:
+                        try:
+                            audio_elements = self.driver.find_elements(By.TAG_NAME, "audio")
+                            for audio_elem in audio_elements:
+                                src = audio_elem.get_attribute('src')
+                                if src and 'payload' in src:
+                                    audio_url = src
+                                    print(f"   ✓ Got audio URL from <audio> tag (attempt {attempt+1}): {audio_url[:80]}...")
+                                    break
+                        except Exception:
+                            pass
+                    
+                    if audio_url:
+                        break
+                    
+                    # Wait before next attempt
+                    print(f"   ⏳ Attempt {attempt+1}/{max_attempts}: Audio source not yet loaded, waiting...")
+                    time.sleep(1)
+                
+                # Strategy 3: If still not found, check download link
+                if not audio_url:
+                    try:
+                        print("   Trying download link method...")
+                        download_link = self.driver.find_element(By.CSS_SELECTOR, ".rc-audiochallenge-tdownload-link")
+                        audio_url = download_link.get_attribute('href')
+                        if audio_url:
+                            print(f"   ✓ Got audio URL from download link: {audio_url[:80]}...")
+                    except Exception as e:
+                        print(f"   ⚠ Download link not found: {e}")
+                
+                # Strategy 4: Extract from page source as last resort
+                if not audio_url:
+                    try:
+                        print("   Trying to extract from page source...")
+                        page_source = self.driver.page_source
+                        import re
+                        
+                        # Look for payload URLs
+                        matches = re.findall(r'https://www\.google\.com/recaptcha/api2/payload\?[^"\'>\s]+', page_source)
+                        if matches:
+                            # Use first match that looks like an audio URL
+                            for match in matches:
+                                # Decode HTML entities if needed
+                                match = match.replace('&amp;', '&')
+                                audio_url = match
+                                print(f"   ✓ Got audio URL from page source: {audio_url[:80]}...")
+                                break
+                    except Exception as e:
+                        print(f"   ⚠ Could not extract from page source: {e}")
                 
                 if not audio_url:
-                    print("   ✗ Audio source has no URL")
+                    print("   ✗ Could not find audio URL using any strategy")
+                    print("   This might mean:")
+                    print("      - Audio challenge is not available for this captcha")
+                    print("      - The page structure has changed")
+                    print("      - Network request to load audio failed")
+                    self.driver.save_screenshot('no_audio_source.png')
+                    with open('audio_challenge_page.html', 'w', encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    print("   Saved debug files for inspection")
                     self.driver.switch_to.default_content()
                     return False
                 
-                print(f"   ✓ Got audio URL: {audio_url[:80]}...")
-                
-            except TimeoutException:
-                print("   ✗ Audio source element not found")
-                self.driver.save_screenshot('no_audio_source.png')
-                self.driver.switch_to.default_content()
-                return False
             except Exception as e:
                 print(f"   ✗ Error getting audio source: {e}")
+                traceback.print_exc()
                 self.driver.switch_to.default_content()
                 return False
 
             # Download and process audio
             try:
                 print("   Step 7: Downloading audio...")
-                response = requests.get(audio_url, timeout=15)
+                
+                # Add headers to mimic the browser request you showed
+                headers = {
+                    'accept': '*/*',
+                    'accept-language': 'en-US,en;q=0.9',
+                    'dnt': '1',
+                    'referer': 'https://www.google.com/recaptcha/api2/bframe',
+                    'sec-fetch-dest': 'audio',
+                    'sec-fetch-mode': 'no-cors',
+                    'sec-fetch-site': 'same-origin',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+                
+                response = requests.get(audio_url, headers=headers, timeout=20)
+                
+                if response.status_code != 200:
+                    print(f"   ✗ Failed to download audio: HTTP {response.status_code}")
+                    print(f"   Response: {response.text[:200]}")
+                    self.driver.switch_to.default_content()
+                    return False
+                
                 audio_data = response.content
+                
+                if len(audio_data) < 100:
+                    print(f"   ✗ Downloaded audio is too small ({len(audio_data)} bytes), might be an error")
+                    self.driver.switch_to.default_content()
+                    return False
+                
+                print(f"   ✓ Downloaded audio: {len(audio_data)} bytes")
                 
                 print("   Step 8: Converting audio to WAV...")
                 audio = AudioSegment.from_file(io.BytesIO(audio_data))
@@ -337,10 +461,15 @@ class DPDCAutomation:
                 wav_data = io.BytesIO()
                 audio.export(wav_data, format="wav")
                 wav_data.seek(0)
-                print("   ✓ Audio converted")
+                print("   ✓ Audio converted to WAV format")
                 
+            except requests.exceptions.RequestException as e:
+                print(f"   ✗ Network error downloading audio: {e}")
+                self.driver.switch_to.default_content()
+                return False
             except Exception as e:
                 print(f"   ✗ Error downloading/converting audio: {e}")
+                traceback.print_exc()
                 self.driver.switch_to.default_content()
                 return False
 
