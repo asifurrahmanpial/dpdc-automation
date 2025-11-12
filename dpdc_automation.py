@@ -21,7 +21,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 import undetected_chromedriver as uc
 # If you want extra stealth, you can uncomment below and install selenium_stealth
-# from selenium_stealth import stealth
+from selenium_stealth import stealth
 
 class DPDCAutomation:
     def __init__(self):
