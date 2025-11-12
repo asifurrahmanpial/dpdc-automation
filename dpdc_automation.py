@@ -24,8 +24,8 @@ class DPDCAutomation:
         """Initialize with proxy rotation and captcha solving"""
         print("🚀 Initializing DPDC Automation with Proxy Rotation...")
         
-        # Get working proxy first
-        self.proxy = self.get_working_proxy()
+        # Get working proxy first (with retry mechanism)
+        self.proxy = self.get_working_proxy_with_retry()
         if self.proxy:
             print(f"✓ Using proxy: {self.proxy}")
         else:
@@ -37,60 +37,31 @@ class DPDCAutomation:
         self.setup_google_sheets()
     
     def fetch_proxy_list(self):
-        """Fetch proxies from multiple reliable sources"""
+        """Fetch proxies from Geonode free proxy list (replaces old sources)"""
         proxies = []
-        
-        print("   Fetching proxy lists...")
-        
-        # Source 1: ProxyScrape (most reliable)
+        print("   Fetching proxy list from Geonode...")
         try:
-            url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=elite'
+            url = "https://proxylist.geonode.com/api/proxy-list?limit=100&page=1&sort_by=lastChecked&sort_type=desc"
             response = requests.get(url, timeout=15)
             if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip()]
-                proxies.extend(proxy_list)
-                print(f"   ✓ ProxyScrape: {len(proxy_list)} proxies")
+                data = response.json()
+                for proxy in data.get('data', []):
+                    ip = proxy.get('ip')
+                    port = proxy.get('port')
+                    if ip and port:
+                        proxies.append(f"{ip}:{port}")
+                print(f"   ✓ Geonode: {len(proxies)} proxies fetched")
+            else:
+                print(f"   ✗ Failed to fetch from Geonode: {response.status_code}")
         except Exception as e:
-            print(f"   ⚠ ProxyScrape failed: {e}")
+            print(f"   ⚠ Geonode fetch failed: {e}")
         
-        # Source 2: GitHub - TheSpeedX (updated frequently)
-        try:
-            url = 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ TheSpeedX: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ TheSpeedX failed: {e}")
-        
-        # Source 3: proxy-list (clarketm)
-        try:
-            url = 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ clarketm: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ clarketm failed: {e}")
-        
-        # Source 4: Free-Proxy-List
-        try:
-            url = 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ ShiftyTR: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ ShiftyTR failed: {e}")
-        
-        # Remove duplicates and shuffle
-        proxies = list(set(proxies))
-        random.shuffle(proxies)
-        
-        print(f"   → Total unique proxies: {len(proxies)}")
+        if proxies:
+            proxies = list(set(proxies))
+            random.shuffle(proxies)
+            print(f"   → Total unique proxies: {len(proxies)}")
+        else:
+            print("   ✗ No proxies found from Geonode")
         return proxies
     
     def test_proxy(self, proxy, timeout=8):
@@ -110,31 +81,33 @@ class DPDCAutomation:
             pass
         return False
     
-    def get_working_proxy(self):
-        """Find a working proxy from available sources"""
-        print("🔍 Finding working proxy...")
+    def get_working_proxy_with_retry(self, max_batches=3):
+        """Attempt to fetch proxies and test them, retrying with fresh batch if none work"""
+        for batch_number in range(1, max_batches + 1):
+            print(f"🔍 Finding working proxy (batch {batch_number}/{max_batches}) …")
+            proxies = self.fetch_proxy_list()
+            if not proxies:
+                print("   ✗ No proxies available in this batch")
+                continue
+            
+            max_tests = min(30, len(proxies))
+            print(f"   Testing up to {max_tests} proxies in this batch...")
+            
+            for i, proxy in enumerate(proxies[:max_tests], 1):
+                print(f"   [{i}/{max_tests}] Testing {proxy} …", end=' ')
+                if self.test_proxy(proxy):
+                    print("✓ WORKS!")
+                    return proxy
+                else:
+                    print("✗")
+            
+            print(f"   ✗ No working proxy found in batch {batch_number}")
+            # Optionally wait a bit before next batch
+            time.sleep(2)
         
-        proxies = self.fetch_proxy_list()
-        
-        if not proxies:
-            print("   ✗ No proxies available")
-            return None
-        
-        # Test up to 30 proxies (increased from 20)
-        max_tests = min(30, len(proxies))
-        print(f"   Testing up to {max_tests} proxies...")
-        
-        for i, proxy in enumerate(proxies[:max_tests], 1):
-            print(f"   [{i}/{max_tests}] Testing {proxy}...", end=' ')
-            if self.test_proxy(proxy):
-                print("✓ WORKS!")
-                return proxy
-            else:
-                print("✗")
-        
-        print("   ✗ No working proxy found")
+        print("   ✗ All batches failed, no working proxy found")
         return None
-    
+
     def create_driver_with_proxy(self, proxy=None):
         """Create Chrome driver with optional proxy"""
         self.user_agents = [
@@ -220,11 +193,11 @@ class DPDCAutomation:
         Enhanced audio captcha solver based on successful implementations
         """
         try:
-            print("\n🔓 Solving reCAPTCHA v2 (Enhanced Method)...")
+            print("\n🔓 Solving reCAPTCHA v2 (Enhanced Method)…")
             self.driver.switch_to.default_content()
             
             # Find and switch to checkbox iframe
-            print("   [1/9] Finding checkbox iframe...")
+            print("   [1/9] Finding checkbox iframe…")
             try:
                 checkbox_iframe = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']"))
@@ -236,7 +209,7 @@ class DPDCAutomation:
                 return True
             
             # Click checkbox
-            print("   [2/9] Clicking checkbox...")
+            print("   [2/9] Clicking checkbox…")
             try:
                 checkbox = WebDriverWait(self.driver, 5).until(
                     EC.element_to_be_clickable((By.ID, "recaptcha-anchor"))
@@ -250,7 +223,7 @@ class DPDCAutomation:
             self.driver.switch_to.default_content()
             
             # Wait and find challenge iframe
-            print("   [3/9] Looking for challenge iframe...")
+            print("   [3/9] Looking for challenge iframe…")
             try:
                 challenge_iframe = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/bframe']"))
@@ -264,7 +237,7 @@ class DPDCAutomation:
                 return True
             
             # Click audio button
-            print("   [4/9] Clicking audio button...")
+            print("   [4/9] Clicking audio button…")
             try:
                 audio_btn = WebDriverWait(self.driver, 10).until(
                     EC.element_to_be_clickable((By.ID, "recaptcha-audio-button"))
@@ -279,14 +252,14 @@ class DPDCAutomation:
                 return False
             
             # Critical: Wait for audio challenge to fully load
-            print("   [5/9] Waiting for audio challenge to load...")
+            print("   [5/9] Waiting for audio challenge to load…")
             try:
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CLASS_NAME, "rc-audiochallenge-tdownload-link"))
                 )
                 print("   ✓ Audio challenge loaded")
             except TimeoutException:
-                print("   ⚠ Audio challenge not detected, checking for blocking...")
+                print("   ⚠ Audio challenge not detected, checking for blocking…")
                 page_text = self.driver.find_element(By.TAG_NAME, 'body').text
                 if 'try again later' in page_text.lower():
                     print("   ❌ Google blocked audio challenge")
@@ -294,31 +267,30 @@ class DPDCAutomation:
                     self.driver.switch_to.default_content()
                     return False
             
-            # Get audio source URL - Enhanced method
-            print("   [6/9] Getting audio URL...")
+            # Get audio source URL
+            print("   [6/9] Getting audio URL…")
             audio_url = None
             
-            # Method 1: Check download link (most reliable)
+            # Method 1: Check download link
             try:
                 download_link = self.driver.find_element(By.CLASS_NAME, "rc-audiochallenge-tdownload-link")
                 audio_url = download_link.get_attribute("href")
                 if audio_url:
-                    print(f"   ✓ Got audio URL from download link")
+                    print("   ✓ Got audio URL from download link")
             except NoSuchElementException:
                 pass
             
-            # Method 2: Check audio source element
+            # Method 2: Check audio source
             if not audio_url:
                 try:
                     audio_source = WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.ID, "audio-source"))
                     )
-                    # Wait for src to be populated
                     for attempt in range(20):
                         src = audio_source.get_attribute("src")
                         if src and len(src) > 0:
                             audio_url = src
-                            print(f"   ✓ Got audio URL from source (attempt {attempt + 1})")
+                            print(f"   ✓ Got audio URL from source (attempt {attempt+1})")
                             break
                         time.sleep(0.5)
                 except Exception as e:
@@ -332,11 +304,10 @@ class DPDCAutomation:
                 return False
             
             # Download audio
-            print("   [7/9] Downloading audio...")
+            print("   [7/9] Downloading audio…")
             try:
-                # Use proxy for audio download if available
                 proxies_dict = None
-                if hasattr(self, 'proxy') and self.proxy:
+                if self.proxy:
                     proxies_dict = {
                         'http': f'http://{self.proxy}',
                         'https': f'http://{self.proxy}'
@@ -365,7 +336,7 @@ class DPDCAutomation:
                 return False
             
             # Speech recognition
-            print("   [8/9] Running speech recognition...")
+            print("   [8/9] Running speech recognition…")
             try:
                 recognizer = sr.Recognizer()
                 recognizer.energy_threshold = 300
@@ -386,7 +357,7 @@ class DPDCAutomation:
                 return False
             
             # Submit answer
-            print("   [9/9] Submitting answer...")
+            print("   [9/9] Submitting answer…")
             try:
                 response_input = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.ID, "audio-response"))
@@ -442,13 +413,13 @@ class DPDCAutomation:
             print(f"\n📡 Fetching data for customer: {customer_number}")
             
             # Navigate to login
-            print("   → Loading login page...")
+            print("   → Loading login page…")
             self.driver.get('https://amiapp.dpdc.org.bd/login')
             self.delay(2, 4)
             self.driver.save_screenshot('01_login_page.png')
             
             # Click Quick Pay
-            print("   → Finding Quick Pay...")
+            print("   → Finding Quick Pay…")
             if self.find_and_click_element(By.XPATH, "//button[contains(., 'QUICK PAY')]", "Quick Pay"):
                 self.delay(2, 3)
             else:
@@ -458,7 +429,7 @@ class DPDCAutomation:
             self.driver.save_screenshot('02_quick_pay_page.png')
             
             # Find customer input
-            print("   → Entering customer number...")
+            print("   → Entering customer number…")
             try:
                 customer_input = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number']"))
@@ -484,13 +455,13 @@ class DPDCAutomation:
                     if solved:
                         print("   ✓ Captcha solved")
                     else:
-                        print("   ⚠ Captcha not solved, continuing...")
+                        print("   ⚠ Captcha not solved, continuing…")
                     self.delay(1, 2)
             except Exception as e:
                 print(f"   Note: {e}")
             
             # Submit form
-            print("   → Submitting...")
+            print("   → Submitting…")
             try:
                 submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
                 
@@ -507,7 +478,7 @@ class DPDCAutomation:
                 print("   ✓ Pressed Enter")
             
             # Wait for results
-            print("   → Waiting for results...")
+            print("   → Waiting for results…")
             self.delay(8, 12)
             self.driver.save_screenshot('04_results.png')
             
@@ -549,7 +520,7 @@ class DPDCAutomation:
 
     def update_google_sheet(self, spreadsheet_id, data):
         try:
-            print("\n📊 Updating Google Sheet...")
+            print("📊 Updating Google Sheet…")
             sheet = self.gc.open_by_key(spreadsheet_id)
             worksheet = sheet.sheet1
 
