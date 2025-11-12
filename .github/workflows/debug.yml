@@ -20,38 +20,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y chromium-browser chromium-chromedriver ffmpeg portaudio19-dev xvfb
+          which chromium-browser
 
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          # include undetected-chromedriver explicitly
-          pip install undetected-chromedriver
-
-      - name: Start virtual display (for non-headless Chrome if needed)
-        run: |
-          xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python -c "print('Xvfb ready')"
+          pip install undetected-chromedriver selenium-stealth selenium-wire blinker
 
       - name: Run automation (debug mode)
+        id: run_automation
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           CUSTOMER_NUMBER: ${{ secrets.CUSTOMER_NUMBER }}
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
-          # If you want to run with Xvfb (non-headless) uncomment the next line
-          # xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python dpdc_automation.py
-          python dpdc_automation.py
+          xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python dpdc_automation.py
         continue-on-error: true
 
-      - name: List generated files
+      - name: Upload debug artifacts
         if: always()
-        run: |
-          echo "=== Generated files ==="
-          ls -lah *.png *.html *.txt 2>/dev/null || echo "No debug files found"
-
-      - name: Upload all debug artifacts
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: debug-files-${{ github.run_number }}
           path: |
@@ -60,3 +49,9 @@ jobs:
             *.txt
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Check automation exit code
+        if: ${{ steps.run_automation.outcome == 'failure' }}
+        run: |
+          echo "⚠ Automation step failed — marking job as failed"
+          exit 1
