@@ -6,49 +6,57 @@ on:
 jobs:
   debug-fetch:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y chromium-browser chromium-chromedriver ffmpeg portaudio19-dev
-    
-    - name: Install Python dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-    
-    - name: Run automation (debug mode)
-      env:
-        GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        CUSTOMER_NUMBER: ${{ secrets.CUSTOMER_NUMBER }}
-        SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-      run: |
-        python dpdc_automation.py
-      continue-on-error: true
-    
-    - name: List generated files
-      if: always()
-      run: |
-        echo "=== Generated files ==="
-        ls -lah *.png *.html *.txt 2>/dev/null || echo "No debug files found"
-    
-    - name: Upload all debug artifacts
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: debug-files-${{ github.run_number }}
-        path: |
-          *.png
-          *.html
-          *.txt
-        retention-days: 7
-        if-no-files-found: warn
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver ffmpeg portaudio19-dev xvfb
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          # include undetected-chromedriver explicitly
+          pip install undetected-chromedriver
+
+      - name: Start virtual display (for non-headless Chrome if needed)
+        run: |
+          xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python -c "print('Xvfb ready')"
+
+      - name: Run automation (debug mode)
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          CUSTOMER_NUMBER: ${{ secrets.CUSTOMER_NUMBER }}
+          SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: |
+          # If you want to run with Xvfb (non-headless) uncomment the next line
+          # xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python dpdc_automation.py
+          python dpdc_automation.py
+        continue-on-error: true
+
+      - name: List generated files
+        if: always()
+        run: |
+          echo "=== Generated files ==="
+          ls -lah *.png *.html *.txt 2>/dev/null || echo "No debug files found"
+
+      - name: Upload all debug artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-files-${{ github.run_number }}
+          path: |
+            *.png
+            *.html
+            *.txt
+          retention-days: 7
+          if-no-files-found: warn
