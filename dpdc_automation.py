@@ -22,19 +22,15 @@ import traceback
 class DPDCAutomation:
     def __init__(self):
         """Initialize with anti-detection and captcha solving"""
-        print("🚀 Initializing DPDC Automation with Captcha Solver...")
+        print("🚀 Initializing DPDC Automation with Enhanced Captcha Solver...")
 
-        # Rotating user agents
         self.user_agents = [
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ]
 
         user_agent = random.choice(self.user_agents)
 
-        # Chrome options with anti-detection
         chrome_options = Options()
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
@@ -42,24 +38,15 @@ class DPDCAutomation:
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
         chrome_options.add_argument(f'user-agent={user_agent}')
-
-        # Anti-detection
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
 
-        # Enable audio for captcha solving
-        chrome_options.add_argument('--use-fake-ui-for-media-stream')
-        chrome_options.add_argument('--use-fake-device-for-media-stream')
-
-        # Permissions
         prefs = {
             'profile.default_content_setting_values': {
                 'cookies': 1,
                 'geolocation': 1,
-                'notifications': 1,
-                'media_stream': 1,
-                'media_stream_mic': 1
+                'notifications': 1
             }
         }
         chrome_options.add_experimental_option('prefs', prefs)
@@ -67,7 +54,6 @@ class DPDCAutomation:
         service = Service('/usr/bin/chromedriver')
         self.driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        # Anti-detection script
         try:
             self.driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
                 'source': '''
@@ -75,16 +61,8 @@ class DPDCAutomation:
                     Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
                     Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
                     window.chrome = {runtime: {}};
-                    Object.defineProperty(navigator, 'permissions', {
-                        get: () => ({query: () => Promise.resolve({ state: 'granted' })})
-                    });
                 '''
             })
-        except Exception as e:
-            print("Warning: could not inject anti-detect script:", e)
-
-        # Set geolocation to Dhaka
-        try:
             self.driver.execute_cdp_cmd('Emulation.setGeolocationOverride', {
                 'latitude': 23.8103,
                 'longitude': 90.4125,
@@ -97,7 +75,6 @@ class DPDCAutomation:
         self.setup_google_sheets()
 
     def setup_google_sheets(self):
-        """Set up Google Sheets"""
         try:
             credentials_json = os.environ.get('GOOGLE_CREDENTIALS')
             if not credentials_json:
@@ -112,429 +89,200 @@ class DPDCAutomation:
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
             self.gc = gspread.authorize(creds)
             print("✓ Google Sheets connected")
-
         except Exception as e:
             print(f"✗ Error setting up Google Sheets: {e}")
             raise
 
-    def random_delay(self, min_sec=1.0, max_sec=2.5):
-        """Human-like random delays - INCREASED for better anti-detection"""
+    def delay(self, min_sec=1.5, max_sec=3.0):
         time.sleep(random.uniform(min_sec, max_sec))
 
-    def human_type(self, element, text):
-        """Type like a human with random delays"""
-        for char in text:
-            element.send_keys(char)
-            time.sleep(random.uniform(0.08, 0.18))
-
-    def close_and_quit(self):
-        try:
-            self.driver.quit()
-        except:
-            pass
-
-    def wait_for_page_ready(self, timeout=20):
-        """Wait until document.readyState is complete"""
-        try:
-            WebDriverWait(self.driver, timeout).until(
-                lambda d: d.execute_script("return document.readyState") == "complete"
-            )
-        except TimeoutException:
-            pass
-
-        # Wait briefly for JS loaders
-        end = time.time() + timeout
-        while time.time() < end:
-            try:
-                loaders = self.driver.find_elements(By.XPATH, "//*[contains(@class,'loader') or contains(@class,'progress') or @role='progressbar']")
-                visible = False
-                for l in loaders:
-                    if l.is_displayed():
-                        visible = True
-                        break
-                if not visible:
-                    return True
-            except:
-                return True
-            time.sleep(0.5)
-        return True
-
-    def solve_recaptcha_v2(self):
+    def solve_recaptcha_audio(self):
         """
-        Solve reCAPTCHA v2 using audio challenge - IMPROVED VERSION
+        Enhanced audio captcha solver based on successful implementations
         """
         try:
-            print("\n🔓 Attempting to solve reCAPTCHA...")
+            print("\n🔓 Solving reCAPTCHA v2 (Enhanced Method)...")
             self.driver.switch_to.default_content()
             
-            # Find and switch to anchor iframe (checkbox)
+            # Find and switch to checkbox iframe
+            print("   [1/9] Finding checkbox iframe...")
             try:
-                print("   Step 1: Looking for reCAPTCHA anchor iframe...")
-                recaptcha_iframe = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'recaptcha/api2/anchor') or @title='reCAPTCHA']"))
+                checkbox_iframe = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']"))
                 )
-                self.driver.switch_to.frame(recaptcha_iframe)
-                print("   ✓ Switched to anchor iframe")
-                
-                # Click checkbox
-                try:
-                    print("   Step 2: Clicking checkbox...")
-                    checkbox = WebDriverWait(self.driver, 4).until(
-                        EC.element_to_be_clickable((By.CSS_SELECTOR, ".recaptcha-checkbox-border"))
-                    )
-                    self.driver.execute_script("arguments[0].click();", checkbox)
-                    print("   ✓ Clicked checkbox")
-                    self.random_delay(2, 3)
-                except Exception as e:
-                    print(f"   ⚠ Could not click checkbox: {e}")
-                
-                self.driver.switch_to.default_content()
-                
+                self.driver.switch_to.frame(checkbox_iframe)
+                print("   ✓ Found checkbox iframe")
             except TimeoutException:
-                print("   ✓ No reCAPTCHA anchor iframe found")
-                self.driver.switch_to.default_content()
+                print("   ✓ No reCAPTCHA found")
                 return True
-
-            # Wait for challenge iframe
-            self.random_delay(2, 3)
-
-            # Find challenge iframe (bframe)
+            
+            # Click checkbox
+            print("   [2/9] Clicking checkbox...")
             try:
-                print("   Step 3: Looking for challenge iframe...")
-                challenge_iframe = WebDriverWait(self.driver, 8).until(
-                    EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src, 'recaptcha/api2/bframe') or contains(@title, 'recaptcha challenge')]"))
+                checkbox = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable((By.ID, "recaptcha-anchor"))
+                )
+                checkbox.click()
+                print("   ✓ Clicked checkbox")
+                self.delay(2, 4)
+            except Exception as e:
+                print(f"   ⚠ Checkbox click failed: {e}")
+            
+            self.driver.switch_to.default_content()
+            
+            # Wait and find challenge iframe
+            print("   [3/9] Looking for challenge iframe...")
+            try:
+                challenge_iframe = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/bframe']"))
                 )
                 self.driver.switch_to.frame(challenge_iframe)
-                print("   ✓ Switched to challenge iframe")
-                self.driver.save_screenshot('captcha_challenge_frame.png')
-                
-                # Check what type of challenge we got
-                try:
-                    # If we see image challenge
-                    image_challenge = self.driver.find_elements(By.CSS_SELECTOR, ".rc-imageselect-target, .rc-imageselect-challenge")
-                    if image_challenge and image_challenge[0].is_displayed():
-                        print("   ℹ Image challenge detected - will attempt to switch to audio")
-                    
-                    # If we see audio challenge already
-                    audio_challenge = self.driver.find_elements(By.ID, "rc-audio")
-                    if audio_challenge and audio_challenge[0].is_displayed():
-                        print("   ℹ Already on audio challenge")
-                except Exception:
-                    pass
-                
+                print("   ✓ Found challenge iframe")
+                self.driver.save_screenshot('challenge_iframe.png')
             except TimeoutException:
                 print("   ✓ No challenge appeared (auto-solved)")
                 self.driver.switch_to.default_content()
                 return True
-
-            # Now find the audio button - CRITICAL FIX
+            
+            # Click audio button
+            print("   [4/9] Clicking audio button...")
             try:
-                print("   Step 4: Looking for audio button...")
-                
-                # Wait for buttons to be present in the footer
-                self.random_delay(1, 2)
-                
-                # Multiple strategies to find audio button
-                audio_button = None
-                
-                # Strategy 1: By ID (most reliable)
-                try:
-                    audio_button = WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.ID, "recaptcha-audio-button"))
-                    )
-                    print("   ✓ Found audio button by ID")
-                except TimeoutException:
-                    pass
-                
-                # Strategy 2: By class
-                if not audio_button:
-                    try:
-                        audio_button = self.driver.find_element(By.CSS_SELECTOR, ".rc-button-audio")
-                        print("   ✓ Found audio button by class")
-                    except NoSuchElementException:
-                        pass
-                
-                # Strategy 3: By xpath in button holder
-                if not audio_button:
-                    try:
-                        audio_button = self.driver.find_element(By.XPATH, "//div[@class='button-holder audio-button-holder']//button")
-                        print("   ✓ Found audio button by button-holder")
-                    except NoSuchElementException:
-                        pass
-                
-                # Strategy 4: Any button with audio in title
-                if not audio_button:
-                    try:
-                        audio_button = self.driver.find_element(By.XPATH, "//button[contains(@title, 'audio') or contains(@title, 'Audio')]")
-                        print("   ✓ Found audio button by title")
-                    except NoSuchElementException:
-                        pass
-                
-                if not audio_button:
-                    print("   ✗ Could not find audio button at all")
-                    self.driver.save_screenshot('no_audio_button.png')
-                    with open('captcha_page_source.html', 'w', encoding='utf-8') as f:
-                        f.write(self.driver.page_source)
-                    self.driver.switch_to.default_content()
-                    return False
-                
-                # Check if button is visible (might be hidden initially)
-                if not audio_button.is_displayed():
-                    print("   ⚠ Audio button is hidden, trying to make it visible...")
-                    # Sometimes we need to click somewhere first
-                    try:
-                        # Scroll into view
-                        self.driver.execute_script("arguments[0].scrollIntoView(true);", audio_button)
-                        self.random_delay(0.5, 1)
-                    except:
-                        pass
-                
-                # Click audio button using JS (more reliable)
-                print("   Step 5: Clicking audio button...")
-                try:
-                    self.driver.execute_script("arguments[0].click();", audio_button)
-                    print("   ✓ Clicked audio button (JS click)")
-                except Exception as e:
-                    # Fallback to regular click
-                    try:
-                        audio_button.click()
-                        print("   ✓ Clicked audio button (regular click)")
-                    except Exception as e2:
-                        print(f"   ✗ Failed to click audio button: {e}, {e2}")
-                        self.driver.switch_to.default_content()
-                        return False
-                
-                # CRITICAL: Wait for audio challenge UI to fully load
-                print("   Waiting for audio challenge to load...")
-                self.random_delay(4, 7)  # Longer wait to avoid detection
-                
-                # Wait for the audio challenge container to be visible
-                try:
-                    audio_challenge = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "rc-audio"))
-                    )
-                    print("   ✓ Audio challenge UI loaded")
-                except TimeoutException:
-                    print("   ⚠ Audio challenge container not found, but continuing...")
-                
+                audio_btn = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "recaptcha-audio-button"))
+                )
+                audio_btn.click()
+                print("   ✓ Clicked audio button")
+                self.delay(3, 5)
                 self.driver.save_screenshot('after_audio_click.png')
-                
             except Exception as e:
-                print(f"   ✗ Error finding/clicking audio button: {e}")
-                traceback.print_exc()
+                print(f"   ✗ Failed to click audio button: {e}")
                 self.driver.switch_to.default_content()
                 return False
-
-            # Get audio source URL - WAIT FOR DYNAMIC LOAD
+            
+            # Critical: Wait for audio challenge to fully load
+            print("   [5/9] Waiting for audio challenge to load...")
             try:
-                print("   Step 6: Getting audio source...")
-                
-                audio_url = None
-                
-                # The audio element gets populated dynamically after clicking audio button
-                # We need to wait for the src attribute to be populated
-                print("   Waiting for audio source to be populated...")
-                
-                max_attempts = 15  # Try for up to 15 seconds
-                for attempt in range(max_attempts):
-                    try:
-                        # Strategy 1: Check #audio-source element
-                        audio_source = self.driver.find_element(By.ID, "audio-source")
-                        src = audio_source.get_attribute('src')
-                        
-                        # Check if src is populated and valid
-                        if src and 'payload' in src:
-                            audio_url = src
-                            print(f"   ✓ Got audio URL from #audio-source (attempt {attempt+1}): {audio_url[:80]}...")
-                            break
-                        elif src:
-                            print(f"   ⚠ Found src but not a payload URL: {src[:80]}...")
-                    except NoSuchElementException:
-                        pass
-                    
-                    # Strategy 2: Check any audio tag
-                    if not audio_url:
-                        try:
-                            audio_elements = self.driver.find_elements(By.TAG_NAME, "audio")
-                            for audio_elem in audio_elements:
-                                src = audio_elem.get_attribute('src')
-                                if src and 'payload' in src:
-                                    audio_url = src
-                                    print(f"   ✓ Got audio URL from <audio> tag (attempt {attempt+1}): {audio_url[:80]}...")
-                                    break
-                        except Exception:
-                            pass
-                    
-                    if audio_url:
-                        break
-                    
-                    # Wait before next attempt
-                    print(f"   ⏳ Attempt {attempt+1}/{max_attempts}: Audio source not yet loaded, waiting...")
-                    time.sleep(1)
-                
-                # Strategy 3: If still not found, check download link
-                if not audio_url:
-                    try:
-                        print("   Trying download link method...")
-                        download_link = self.driver.find_element(By.CSS_SELECTOR, ".rc-audiochallenge-tdownload-link")
-                        audio_url = download_link.get_attribute('href')
-                        if audio_url:
-                            print(f"   ✓ Got audio URL from download link: {audio_url[:80]}...")
-                    except Exception as e:
-                        print(f"   ⚠ Download link not found: {e}")
-                
-                # Strategy 4: Extract from page source as last resort
-                if not audio_url:
-                    try:
-                        print("   Trying to extract from page source...")
-                        page_source = self.driver.page_source
-                        import re
-                        
-                        # Look for payload URLs
-                        matches = re.findall(r'https://www\.google\.com/recaptcha/api2/payload\?[^"\'>\s]+', page_source)
-                        if matches:
-                            # Use first match that looks like an audio URL
-                            for match in matches:
-                                # Decode HTML entities if needed
-                                match = match.replace('&amp;', '&')
-                                audio_url = match
-                                print(f"   ✓ Got audio URL from page source: {audio_url[:80]}...")
-                                break
-                    except Exception as e:
-                        print(f"   ⚠ Could not extract from page source: {e}")
-                
-                if not audio_url:
-                    print("   ✗ Could not find audio URL using any strategy")
-                    
-                    # Check if Google blocked us with "Try again later" message
-                    page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-                    if 'try again later' in page_text.lower() or 'automated queries' in page_text.lower():
-                        print("   ❌ CRITICAL: Google detected automation and blocked the request!")
-                        print("   Message: 'Your computer or network may be sending automated queries'")
-                        print("   This means:")
-                        print("      1. Our anti-detection measures aren't fooling Google")
-                        print("      2. The IP might be temporarily rate-limited")
-                        print("      3. We need to implement additional countermeasures")
-                    else:
-                        print("   This might mean:")
-                        print("      - Audio challenge is not available")
-                        print("      - The page structure has changed")
-                        print("      - Network request failed")
-                    
-                    self.driver.save_screenshot('no_audio_source.png')
-                    with open('audio_challenge_page.html', 'w', encoding='utf-8') as f:
-                        f.write(self.driver.page_source)
-                    print("   Saved debug files for inspection")
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "rc-audiochallenge-tdownload-link"))
+                )
+                print("   ✓ Audio challenge loaded")
+            except TimeoutException:
+                print("   ⚠ Audio challenge not detected, checking for blocking...")
+                page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+                if 'try again later' in page_text.lower():
+                    print("   ❌ Google blocked audio challenge")
+                    self.driver.save_screenshot('blocked_by_google.png')
                     self.driver.switch_to.default_content()
-                    
-                    # Don't fail completely - return False to try continuing anyway
                     return False
-                
-            except Exception as e:
-                print(f"   ✗ Error getting audio source: {e}")
-                traceback.print_exc()
+            
+            # Get audio source URL - Enhanced method
+            print("   [6/9] Getting audio URL...")
+            audio_url = None
+            
+            # Method 1: Check download link (most reliable)
+            try:
+                download_link = self.driver.find_element(By.CLASS_NAME, "rc-audiochallenge-tdownload-link")
+                audio_url = download_link.get_attribute("href")
+                if audio_url:
+                    print(f"   ✓ Got audio URL from download link")
+            except NoSuchElementException:
+                pass
+            
+            # Method 2: Check audio source element
+            if not audio_url:
+                try:
+                    audio_source = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.ID, "audio-source"))
+                    )
+                    # Wait for src to be populated
+                    for attempt in range(20):
+                        src = audio_source.get_attribute("src")
+                        if src and len(src) > 0:
+                            audio_url = src
+                            print(f"   ✓ Got audio URL from source (attempt {attempt + 1})")
+                            break
+                        time.sleep(0.5)
+                except Exception as e:
+                    print(f"   ⚠ Could not get audio source: {e}")
+            
+            if not audio_url:
+                print("   ✗ No audio URL found")
+                with open('no_audio_page.html', 'w') as f:
+                    f.write(self.driver.page_source)
                 self.driver.switch_to.default_content()
                 return False
-
-            # Download and process audio
+            
+            # Download audio
+            print("   [7/9] Downloading audio...")
             try:
-                print("   Step 7: Downloading audio...")
-                
-                # Add headers to mimic the browser request you showed
-                headers = {
-                    'accept': '*/*',
-                    'accept-language': 'en-US,en;q=0.9',
-                    'dnt': '1',
-                    'referer': 'https://www.google.com/recaptcha/api2/bframe',
-                    'sec-fetch-dest': 'audio',
-                    'sec-fetch-mode': 'no-cors',
-                    'sec-fetch-site': 'same-origin',
-                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                }
-                
-                response = requests.get(audio_url, headers=headers, timeout=20)
-                
+                response = requests.get(audio_url, timeout=30)
                 if response.status_code != 200:
-                    print(f"   ✗ Failed to download audio: HTTP {response.status_code}")
-                    print(f"   Response: {response.text[:200]}")
+                    print(f"   ✗ Download failed: {response.status_code}")
                     self.driver.switch_to.default_content()
                     return False
                 
                 audio_data = response.content
+                print(f"   ✓ Downloaded {len(audio_data)} bytes")
                 
-                if len(audio_data) < 100:
-                    print(f"   ✗ Downloaded audio is too small ({len(audio_data)} bytes), might be an error")
-                    self.driver.switch_to.default_content()
-                    return False
-                
-                print(f"   ✓ Downloaded audio: {len(audio_data)} bytes")
-                
-                print("   Step 8: Converting audio to WAV...")
+                # Convert to WAV
                 audio = AudioSegment.from_file(io.BytesIO(audio_data))
                 audio = audio.set_channels(1).set_frame_rate(16000)
-                wav_data = io.BytesIO()
-                audio.export(wav_data, format="wav")
-                wav_data.seek(0)
-                print("   ✓ Audio converted to WAV format")
-                
-            except requests.exceptions.RequestException as e:
-                print(f"   ✗ Network error downloading audio: {e}")
-                self.driver.switch_to.default_content()
-                return False
+                wav_io = io.BytesIO()
+                audio.export(wav_io, format="wav")
+                wav_io.seek(0)
+                print("   ✓ Converted to WAV")
             except Exception as e:
-                print(f"   ✗ Error downloading/converting audio: {e}")
-                traceback.print_exc()
+                print(f"   ✗ Audio processing failed: {e}")
                 self.driver.switch_to.default_content()
                 return False
-
+            
             # Speech recognition
+            print("   [8/9] Running speech recognition...")
             try:
-                print("   Step 9: Running speech recognition...")
                 recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_data) as source:
-                    audio_listened = recognizer.record(source)
-                    recognized_text = recognizer.recognize_google(audio_listened)
-                print(f"   ✓ Recognized text: '{recognized_text}'")
+                recognizer.energy_threshold = 300
                 
-            except Exception as e:
-                print(f"   ✗ Speech recognition failed: {e}")
+                with sr.AudioFile(wav_io) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(audio_data)
+                
+                text = text.lower().strip()
+                print(f"   ✓ Recognized: '{text}'")
+            except sr.UnknownValueError:
+                print("   ✗ Could not understand audio")
                 self.driver.switch_to.default_content()
                 return False
-
-            # Submit response
+            except Exception as e:
+                print(f"   ✗ Recognition failed: {e}")
+                self.driver.switch_to.default_content()
+                return False
+            
+            # Submit answer
+            print("   [9/9] Submitting answer...")
             try:
-                print("   Step 10: Submitting answer...")
-                
-                # Find response input
                 response_input = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.ID, "audio-response"))
                 )
                 response_input.clear()
+                response_input.send_keys(text)
+                self.delay(1, 2)
                 
-                # Type the answer (human-like)
-                self.human_type(response_input, recognized_text.lower())
-                self.random_delay(1, 2)
+                verify_btn = self.driver.find_element(By.ID, "recaptcha-verify-button")
+                verify_btn.click()
+                print("   ✓ Submitted answer")
+                self.delay(3, 5)
                 
-                # Find and click verify button
-                verify_button = self.driver.find_element(By.ID, "recaptcha-verify-button")
-                self.driver.execute_script("arguments[0].click();", verify_button)
-                print("   ✓ Clicked verify button")
-                
-                self.random_delay(3, 5)
-                self.driver.save_screenshot('after_verify.png')
+                self.driver.switch_to.default_content()
+                print("   ✓ reCAPTCHA solved successfully!")
+                return True
                 
             except Exception as e:
-                print(f"   ✗ Error submitting response: {e}")
+                print(f"   ✗ Submit failed: {e}")
                 self.driver.switch_to.default_content()
                 return False
-
-            # Done
-            self.driver.switch_to.default_content()
-            print("   ✓ reCAPTCHA solving completed!")
-            return True
-
+            
         except Exception as e:
-            print(f"   ✗ Unexpected error in solve_recaptcha_v2: {e}")
+            print(f"   ✗ Unexpected error: {e}")
             traceback.print_exc()
             try:
                 self.driver.switch_to.default_content()
@@ -542,284 +290,136 @@ class DPDCAutomation:
                 pass
             return False
 
-    def find_quick_pay_and_click(self):
-        """Find and click Quick Pay button"""
+    def find_and_click_element(self, by, selector, name="element"):
+        """Helper to find and click elements reliably"""
         try:
-            self.wait_for_page_ready(timeout=20)
-            self.random_delay(0.5, 1.2)
-
-            # XPath strategies
-            xpath_exact = "//button[.//span[normalize-space()='QUICK PAY']]"
-            xpath_contains = "//button[.//span[contains(translate(normalize-space(.), 'abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 'QUICK')]]"
-
-            for xpath in (xpath_exact, xpath_contains):
+            element = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((by, selector))
+            )
+            if element.is_displayed():
+                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
+                self.delay(0.5, 1)
                 try:
-                    quick_btn = WebDriverWait(self.driver, 8).until(
-                        EC.presence_of_element_located((By.XPATH, xpath))
-                    )
-                    if quick_btn and quick_btn.is_displayed():
-                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", quick_btn)
-                        self.random_delay(0.4, 1.0)
-                        try:
-                            quick_btn.click()
-                            print("✓ Clicked Quick Pay (direct)")
-                            return True
-                        except (ElementClickInterceptedException, Exception):
-                            try:
-                                self.driver.execute_script("arguments[0].click();", quick_btn)
-                                print("✓ Clicked Quick Pay (JS)")
-                                return True
-                            except Exception as e:
-                                print(f"   ✗ Failed to click: {e}")
-                except TimeoutException:
-                    continue
-                except Exception as e:
-                    print(f"   Error with xpath {xpath}: {e}")
-                    continue
-
-            # Fallback: direct navigation
-            print("   ⚠ Quick Pay button not found - navigating directly")
-            self.driver.get("https://amiapp.dpdc.org.bd/quick-pay")
-            self.wait_for_page_ready(timeout=12)
-            self.random_delay(1, 2)
-            return True
-
+                    element.click()
+                except:
+                    self.driver.execute_script("arguments[0].click();", element)
+                print(f"   ✓ Clicked {name}")
+                return True
         except Exception as e:
-            print(f"   ✗ find_quick_pay_and_click error: {e}")
-            traceback.print_exc()
-            try:
-                self.driver.switch_to.default_content()
-            except:
-                pass
+            print(f"   ✗ Failed to click {name}: {e}")
             return False
 
     def fetch_usage_data(self, customer_number):
-        """Fetch data with captcha solving"""
         try:
             print(f"\n📡 Fetching data for customer: {customer_number}")
-
-            # Go to login page
-            print("   Step 1: Loading login page...")
+            
+            # Navigate to login
+            print("   → Loading login page...")
             self.driver.get('https://amiapp.dpdc.org.bd/login')
-            self.wait_for_page_ready(timeout=20)
-            self.random_delay(1.5, 3.0)
-            self.driver.save_screenshot('step1_login_page.png')
-
-            # Find and click Quick Pay
-            print("   Step 2: Finding Quick Pay...")
-            self.find_quick_pay_and_click()
-            self.random_delay(2, 4)
-            self.driver.save_screenshot('step2_quick_pay_page.png')
-
-            self.wait_for_page_ready(timeout=12)
-
-            # Find customer input
-            print("   Step 3: Looking for customer number input...")
-            customer_input = None
-            possible_selectors = [
-                "//input[@placeholder='Enter your Customer Number']",
-                "//input[contains(@placeholder, 'Customer')]",
-                "//input[contains(@placeholder, 'customer')]",
-                "//input[@name='accountId' or @name='customerNumber']",
-                "//input[@type='text']",
-                "//input[@type='number']"
-            ]
+            self.delay(2, 4)
+            self.driver.save_screenshot('01_login_page.png')
             
-            for selector in possible_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for element in elements:
-                        if element.is_displayed():
-                            customer_input = element
-                            print(f"   ✓ Found input with: {selector}")
-                            break
-                    if customer_input:
-                        break
-                except Exception:
-                    continue
-
-            if not customer_input:
-                with open('page_source_quickpay.html', 'w', encoding='utf-8') as f:
-                    f.write(self.driver.page_source)
-                raise Exception("Could not find customer input")
-
-            # Enter customer number
-            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", customer_input)
-            self.random_delay(0.4, 0.8)
-            try:
-                customer_input.click()
-            except:
-                pass
-            self.random_delay(0.2, 0.4)
-            
-            try:
-                customer_input.clear()
-            except:
-                pass
-            
-            self.human_type(customer_input, customer_number)
-            self.random_delay(0.6, 1.2)
-            self.driver.save_screenshot('step3_after_input.png')
-            print("   ✓ Entered customer number")
-
-            # Check for and solve captcha
-            try:
-                self.driver.switch_to.default_content()
-                try:
-                    rc_frame = WebDriverWait(self.driver, 4).until(
-                        EC.presence_of_element_located((By.XPATH, "//iframe[contains(@src,'recaptcha') or @title='reCAPTCHA']"))
-                    )
-                    print("   ⚠ reCAPTCHA detected, attempting to solve...")
-                    solved = self.solve_recaptcha_v2()
-                    if not solved:
-                        print("   ⚠ reCAPTCHA solving failed")
-                        print("   ℹ Will attempt to submit anyway - sometimes captcha isn't required")
-                    self.random_delay(1.2, 2.0)
-                except TimeoutException:
-                    print("   ✓ No reCAPTCHA detected")
-            except Exception as e:
-                print(f"   Error checking captcha: {e}")
-                self.driver.switch_to.default_content()
-
-            # Find and click submit
-            print("   Step 4: Looking for Submit button...")
-            submit_btn = None
-            
-            try:
-                btns = self.driver.find_elements(By.XPATH, "//button[contains(., 'Submit') or contains(translate(., 'abcdefghijklmnopqrstuvwxyz','ABCDEFGHIJKLMNOPQRSTUVWXYZ'),'SUBMIT')]")
-                for btn in btns:
-                    if btn.is_displayed():
-                        submit_btn = btn
-                        break
-            except:
-                pass
-
-            if not submit_btn:
-                try:
-                    candidates = self.driver.find_elements(By.XPATH, "//button[@type='submit']")
-                    for c in candidates:
-                        if c.is_displayed():
-                            submit_btn = c
-                            break
-                except:
-                    pass
-
-            if not submit_btn:
-                print("   ⚠ Submit button not found - pressing ENTER")
-                self.driver.save_screenshot('no_submit_found.png')
-                try:
-                    customer_input.send_keys(Keys.RETURN)
-                except:
-                    pass
+            # Click Quick Pay
+            print("   → Finding Quick Pay...")
+            if self.find_and_click_element(By.XPATH, "//button[contains(., 'QUICK PAY')]", "Quick Pay"):
+                self.delay(2, 3)
             else:
+                self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
+                self.delay(2, 3)
+            
+            self.driver.save_screenshot('02_quick_pay_page.png')
+            
+            # Find customer input
+            print("   → Entering customer number...")
+            try:
+                customer_input = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number']"))
+                )
+                customer_input.clear()
+                for char in customer_number:
+                    customer_input.send_keys(char)
+                    time.sleep(random.uniform(0.1, 0.2))
+                print("   ✓ Entered customer number")
+                self.delay(1, 2)
+                self.driver.save_screenshot('03_after_input.png')
+            except Exception as e:
+                print(f"   ✗ Could not enter customer number: {e}")
+                raise
+            
+            # Solve captcha if present
+            try:
+                self.driver.switch_to.default_content()
+                captcha_iframe = self.driver.find_elements(By.CSS_SELECTOR, "iframe[src*='recaptcha']")
+                if captcha_iframe:
+                    print("   ⚠ reCAPTCHA detected")
+                    solved = self.solve_recaptcha_audio()
+                    if solved:
+                        print("   ✓ Captcha solved")
+                    else:
+                        print("   ⚠ Captcha not solved, continuing...")
+                    self.delay(1, 2)
+            except Exception as e:
+                print(f"   Note: {e}")
+            
+            # Submit form
+            print("   → Submitting...")
+            try:
+                submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
+                
                 # Wait for button to be enabled
-                enabled = False
-                for _ in range(12):
-                    try:
-                        is_disabled = submit_btn.get_attribute('disabled')
-                        if not is_disabled:
-                            enabled = True
-                            break
-                    except:
-                        enabled = True
+                for _ in range(10):
+                    if not submit_btn.get_attribute('disabled'):
                         break
                     time.sleep(1)
                 
-                if enabled:
-                    try:
-                        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", submit_btn)
-                        self.random_delay(0.3, 0.6)
-                        try:
-                            submit_btn.click()
-                        except:
-                            self.driver.execute_script("arguments[0].click();", submit_btn)
-                        print("   ✓ Clicked Submit")
-                    except Exception as e:
-                        print(f"   ✗ Could not click submit: {e}")
-                        try:
-                            customer_input.send_keys(Keys.RETURN)
-                        except:
-                            pass
-                else:
-                    print("   ⚠ Submit button disabled - pressing ENTER")
-                    try:
-                        customer_input.send_keys(Keys.RETURN)
-                    except:
-                        pass
-
+                self.driver.execute_script("arguments[0].click();", submit_btn)
+                print("   ✓ Clicked submit")
+            except:
+                customer_input.send_keys(Keys.RETURN)
+                print("   ✓ Pressed Enter")
+            
             # Wait for results
-            print("   Step 5: Waiting for results...")
-            self.random_delay(6, 10)
-            self.driver.save_screenshot('step4_results.png')
-
-            # Scrape data
-            data = self.scrape_page_data()
-            return data
-
-        except Exception as e:
-            print(f"✗ Error in fetch_usage_data: {e}")
-            self.driver.save_screenshot('error_screenshot.png')
-            with open('error_page_source.html', 'w', encoding='utf-8') as f:
-                f.write(self.driver.page_source)
-            traceback.print_exc()
-            raise
-
-    def scrape_page_data(self):
-        """Extract data from page"""
-        try:
-            print("   Step 6: Extracting data...")
-
+            print("   → Waiting for results...")
+            self.delay(8, 12)
+            self.driver.save_screenshot('04_results.png')
+            
+            # Extract data
             page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-
             with open('page_text.txt', 'w', encoding='utf-8') as f:
                 f.write(page_text)
-
-            data = {
-                'accountId': '',
-                'customerName': '',
-                'customerClass': '',
-                'mobileNumber': '',
-                'emailId': '',
-                'accountType': '',
-                'balanceRemaining': '',
-                'connectionStatus': '',
-                'customerType': '',
-                'minRecharge': ''
-            }
-
+            
+            data = {'accountId': '', 'customerName': '', 'customerClass': '',
+                    'mobileNumber': '', 'emailId': '', 'accountType': '',
+                    'balanceRemaining': '', 'connectionStatus': '',
+                    'customerType': '', 'minRecharge': ''}
+            
             for line in page_text.split('\n'):
                 if ':' in line:
                     parts = line.split(':', 1)
                     if len(parts) == 2:
-                        key = parts[0].strip().lower()
-                        value = parts[1].strip()
-
-                        if value:
-                            if 'account' in key:
-                                data['accountId'] = value
-                            elif 'name' in key:
-                                data['customerName'] = value
-                            elif 'balance' in key:
-                                data['balanceRemaining'] = value
-                            elif 'status' in key:
-                                data['connectionStatus'] = value
-                            elif 'mobile' in key:
-                                data['mobileNumber'] = value
-                            elif 'email' in key:
-                                data['emailId'] = value
-
+                        key, value = parts[0].strip().lower(), parts[1].strip()
+                        if 'account' in key and value:
+                            data['accountId'] = value
+                        elif 'name' in key and value:
+                            data['customerName'] = value
+                        elif 'balance' in key and value:
+                            data['balanceRemaining'] = value
+                        elif 'mobile' in key and value:
+                            data['mobileNumber'] = value
+            
             if not any(data.values()):
                 data['customerName'] = page_text[:300].replace('\n', ' ')
-
-            print("   ✓ Data extraction finished")
+            
+            print("   ✓ Data extracted")
             return data
-
+            
         except Exception as e:
-            print(f"✗ Scraping error: {e}")
-            return None
+            print(f"✗ Error: {e}")
+            traceback.print_exc()
+            self.driver.save_screenshot('error.png')
+            raise
 
     def update_google_sheet(self, spreadsheet_id, data):
-        """Update Google Sheet"""
         try:
             print("\n📊 Updating Google Sheet...")
             sheet = self.gc.open_by_key(spreadsheet_id)
@@ -843,17 +443,15 @@ class DPDCAutomation:
             worksheet.append_row(row_data)
             print(f"✓ Updated at {timestamp}")
             return True
-
         except Exception as e:
-            print(f"✗ Error updating sheet: {e}")
+            print(f"✗ Error: {e}")
             raise
 
     def run(self):
-        """Main execution"""
         try:
             print("\n" + "="*60)
-            print("DPDC Usage Data Automation with Captcha Solver")
-            print(f"Started at: {datetime.now()}")
+            print("DPDC Automation with Enhanced Captcha Solver")
+            print(f"Started: {datetime.now()}")
             print("="*60)
 
             customer_number = os.environ.get('CUSTOMER_NUMBER')
@@ -862,19 +460,15 @@ class DPDCAutomation:
             if not customer_number or not spreadsheet_id:
                 raise Exception("Missing environment variables")
 
-            print(f"Customer Number: {customer_number}")
-            print(f"Spreadsheet ID: {spreadsheet_id[:10]}...")
+            print(f"Customer: {customer_number}")
+            print(f"Sheet: {spreadsheet_id[:10]}...")
 
             data = self.fetch_usage_data(customer_number)
-            if data:
-                self.update_google_sheet(spreadsheet_id, data)
-            else:
-                print("⚠ No data scraped")
+            self.update_google_sheet(spreadsheet_id, data)
 
             print("\n" + "="*60)
-            print("✓ Automation completed!")
+            print("✓ Completed!")
             print("="*60)
-
             return True
 
         except Exception as e:
@@ -883,14 +477,12 @@ class DPDCAutomation:
             print("="*60)
             traceback.print_exc()
             return False
-
         finally:
             try:
                 self.driver.quit()
                 print("\n🔒 Browser closed")
             except:
                 pass
-
 
 if __name__ == "__main__":
     automation = DPDCAutomation()
