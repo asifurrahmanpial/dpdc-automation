@@ -6,3 +6,4 @@ pydub==0.25.1
 requests==2.31.0
 undetected-chromedriver
 selenium-stealth
+selenium-wire
