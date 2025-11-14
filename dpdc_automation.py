@@ -58,15 +58,14 @@ class DPDCAutomation:
         prefs = {
             'profile.default_content_setting_values': {
                 'cookies': 1,
-                'images': 2,  # Don't load images for faster execution
+                'images': 1,  # Load images to see what's happening
                 'javascript': 1,
                 'plugins': 1,
                 'popups': 0,
                 'geolocation': 1,
                 'notifications': 1,
                 'media_stream': 1,
-            },
-            'profile.managed_default_content_settings.images': 2,
+            }
         }
         options.add_experimental_option('prefs', prefs)
         
@@ -127,7 +126,7 @@ class DPDCAutomation:
         prefs = {
             'profile.default_content_setting_values': {
                 'cookies': 1,
-                'images': 2,
+                'images': 1,
                 'geolocation': 1,
                 'notifications': 1
             }
@@ -186,35 +185,30 @@ class DPDCAutomation:
             if random.random() > 0.85:
                 delay += random.uniform(0.3, 0.8)
             time.sleep(delay)
-        
-        # Sometimes backspace and retype (human error simulation)
-        if random.random() > 0.9 and len(text) > 3:
-            time.sleep(random.uniform(0.2, 0.5))
-            element.send_keys(Keys.BACK_SPACE)
-            time.sleep(random.uniform(0.1, 0.3))
-            element.send_keys(text[-1])
 
-    def wait_for_captcha_to_solve_itself(self, max_wait=30):
+    def wait_for_captcha_solution(self, max_wait=60):
         """
-        Wait for reCAPTCHA to auto-solve (many times it does with good fingerprint)
-        Returns True if solved, False if still waiting
+        Wait for reCAPTCHA to be solved (either auto-solve or manual)
+        Returns True if appears solved, False if timeout
         """
-        print("   → Waiting for reCAPTCHA auto-solve...")
+        print(f"   → Waiting up to {max_wait}s for CAPTCHA resolution...")
         start_time = time.time()
+        last_check = ""
         
         while time.time() - start_time < max_wait:
             try:
-                # Check if we're back to main content (captcha solved)
                 self.driver.switch_to.default_content()
                 
-                # Look for success indicators on the page
-                page_text = self.driver.find_element(By.TAG_NAME, 'body').text.lower()
+                # Method 1: Check if submit button is enabled (captcha solved)
+                try:
+                    submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
+                    if not submit_btn.get_attribute('disabled'):
+                        print("   ✓ Submit button is enabled!")
+                        return True
+                except:
+                    pass
                 
-                if any(indicator in page_text for indicator in ['account', 'balance', 'customer', 'mobile']):
-                    print("   ✓ CAPTCHA appears to be solved (found data)")
-                    return True
-                
-                # Check if captcha checkbox is checked
+                # Method 2: Check captcha checkbox state
                 try:
                     checkbox_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']")
                     self.driver.switch_to.frame(checkbox_iframe)
@@ -223,190 +217,71 @@ class DPDCAutomation:
                     self.driver.switch_to.default_content()
                     
                     if aria_checked == "true":
-                        print("   ✓ CAPTCHA checkbox is checked!")
+                        current_check = "✓ Checkbox checked"
+                        if current_check != last_check:
+                            print(f"   {current_check}")
+                            last_check = current_check
                         return True
                 except:
                     pass
+                
+                # Method 3: Check for error/success messages
+                page_text = self.driver.find_element(By.TAG_NAME, 'body').text.lower()
+                if 'account' in page_text or 'balance' in page_text or 'customer' in page_text:
+                    print("   ✓ Data appears on page!")
+                    return True
+                
+                # Progress indicator
+                elapsed = int(time.time() - start_time)
+                if elapsed % 10 == 0 and elapsed > 0:
+                    print(f"   ... still waiting ({elapsed}s/{max_wait}s)")
                 
                 time.sleep(2)
                 
             except Exception as e:
                 time.sleep(1)
         
-        print("   ⚠ CAPTCHA did not auto-solve")
+        print(f"   ⚠ Timeout after {max_wait}s")
         return False
 
-    def handle_captcha_smartly(self):
-        """
-        Smart CAPTCHA handling - wait first, only try to solve if needed
-        """
+    def click_captcha_checkbox(self):
+        """Click the reCAPTCHA checkbox"""
         try:
-            print("\n🔐 Handling reCAPTCHA...")
             self.driver.switch_to.default_content()
             
-            # Check if captcha exists
-            try:
-                checkbox_iframe = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']"))
-                )
-                print("   ✓ reCAPTCHA detected")
-            except TimeoutException:
-                print("   ✓ No reCAPTCHA found")
-                return True
+            # Find checkbox iframe
+            checkbox_iframe = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']"))
+            )
             
-            # Click the checkbox
             self.driver.switch_to.frame(checkbox_iframe)
             self.human_delay(1, 2)
             
-            checkbox = self.driver.find_element(By.ID, "recaptcha-anchor")
+            # Click checkbox
+            checkbox = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.ID, "recaptcha-anchor"))
+            )
             checkbox.click()
-            print("   ✓ Clicked checkbox")
+            print("   ✓ Clicked CAPTCHA checkbox")
             
             self.driver.switch_to.default_content()
-            
-            # Wait longer to see if it auto-solves
-            if self.wait_for_captcha_to_solve_itself(max_wait=45):
-                return True
-            
-            print("   ⚠ CAPTCHA did not auto-solve, may need manual intervention")
-            print("   → Continuing anyway to check for data...")
             return True
             
+        except TimeoutException:
+            print("   ✓ No CAPTCHA found")
+            return True
         except Exception as e:
-            print(f"   ⚠ CAPTCHA handling error: {e}")
+            print(f"   ⚠ Error clicking checkbox: {e}")
             try:
                 self.driver.switch_to.default_content()
             except:
                 pass
-            return True  # Continue anyway
+            return False
 
-    def fetch_usage_data(self, customer_number):
-        try:
-            print(f"\n📡 Fetching data for customer: {customer_number}")
-            
-            # Navigate to login with realistic behavior
-            print("   → Loading website...")
-            self.driver.get('https://amiapp.dpdc.org.bd/')
-            self.human_delay(3, 5)  # Longer initial delay
-            
-            # Scroll a bit (human behavior)
-            self.driver.execute_script("window.scrollTo(0, 300);")
-            self.human_delay(1, 2)
-            self.driver.execute_script("window.scrollTo(0, 0);")
-            
-            self.driver.save_screenshot('01_homepage.png')
-            
-            # Navigate to quick pay
-            print("   → Navigating to Quick Pay...")
-            try:
-                quick_pay_btn = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'QUICK PAY')]"))
-                )
-                self.human_delay(1, 2)
-                quick_pay_btn.click()
-            except:
-                print("   → Direct navigation to Quick Pay page...")
-                self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
-            
-            self.human_delay(3, 5)
-            self.driver.save_screenshot('02_quick_pay.png')
-            
-            # Enter customer number with human-like typing
-            print("   → Entering customer number (human-like)...")
-            try:
-                customer_input = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number']"))
-                )
-                
-                # Click and focus
-                customer_input.click()
-                self.human_delay(0.5, 1)
-                
-                # Type like a human
-                self.human_type(customer_input, customer_number)
-                
-                print("   ✓ Entered customer number")
-                self.human_delay(2, 3)
-                self.driver.save_screenshot('03_after_input.png')
-            except Exception as e:
-                print(f"   ✗ Could not enter customer number: {e}")
-                raise
-            
-            # Handle CAPTCHA smartly
-            self.handle_captcha_smartly()
-            
-            # Submit form
-            print("   → Submitting form...")
-            try:
-                submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
-                
-                # Wait for button to be enabled
-                for _ in range(10):
-                    if not submit_btn.get_attribute('disabled'):
-                        break
-                    time.sleep(1)
-                
-                self.human_delay(1, 2)
-                self.driver.execute_script("arguments[0].click();", submit_btn)
-                print("   ✓ Form submitted")
-            except:
-                customer_input.send_keys(Keys.RETURN)
-                print("   ✓ Pressed Enter")
-            
-            # Wait for results with patience
-            print("   → Waiting for results...")
-            self.human_delay(10, 15)
-            self.driver.save_screenshot('04_results.png')
-            
-            # Try multiple times to get data
-            data = None
-            for attempt in range(3):
-                print(f"   → Extraction attempt {attempt + 1}/3...")
-                page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-                
-                # Save for debugging
-                with open(f'page_text_attempt_{attempt + 1}.txt', 'w', encoding='utf-8') as f:
-                    f.write(page_text)
-                
-                data = self.extract_data_from_text(page_text)
-                
-                if data and any(data.values()):
-                    print("   ✓ Data found!")
-                    break
-                
-                if attempt < 2:
-                    print("   ⚠ No data yet, waiting longer...")
-                    self.human_delay(5, 8)
-            
-            if not data or not any(data.values()):
-                print("   ⚠ Could not extract data, saving page source...")
-                with open('final_page.html', 'w', encoding='utf-8') as f:
-                    f.write(self.driver.page_source)
-                
-                # Return partial data anyway
-                data = {
-                    'accountId': customer_number,
-                    'customerName': 'Data extraction failed',
-                    'customerClass': '',
-                    'mobileNumber': '',
-                    'emailId': '',
-                    'accountType': '',
-                    'balanceRemaining': 'Check manually',
-                    'connectionStatus': '',
-                    'customerType': '',
-                    'minRecharge': ''
-                }
-            
-            return data
-            
-        except Exception as e:
-            print(f"✗ Error: {e}")
-            traceback.print_exc()
-            self.driver.save_screenshot('error.png')
-            raise
-
-    def extract_data_from_text(self, page_text):
-        """Enhanced data extraction with multiple patterns"""
+    def extract_data_from_page(self):
+        """Extract data using multiple methods"""
+        print("   → Extracting data from page...")
+        
         data = {
             'accountId': '',
             'customerName': '',
@@ -420,7 +295,48 @@ class DPDCAutomation:
             'minRecharge': ''
         }
         
-        # Parse line by line
+        # Save page for debugging
+        page_source = self.driver.page_source
+        with open('final_page.html', 'w', encoding='utf-8') as f:
+            f.write(page_source)
+        
+        page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+        with open('final_page_text.txt', 'w', encoding='utf-8') as f:
+            f.write(page_text)
+        
+        print(f"   → Page text length: {len(page_text)} characters")
+        
+        # Method 1: Look for specific elements by class/id
+        try:
+            # Try to find data in common element structures
+            elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), ':')]")
+            for elem in elements:
+                text = elem.text
+                if ':' in text:
+                    parts = text.split(':', 1)
+                    if len(parts) == 2:
+                        key = parts[0].strip().lower()
+                        value = parts[1].strip()
+                        
+                        if value:
+                            if 'account' in key and ('id' in key or 'number' in key):
+                                data['accountId'] = value
+                            elif 'name' in key:
+                                data['customerName'] = value
+                            elif 'balance' in key:
+                                data['balanceRemaining'] = value
+                            elif 'mobile' in key or 'phone' in key:
+                                data['mobileNumber'] = value
+                            elif 'email' in key:
+                                data['emailId'] = value
+                            elif 'class' in key:
+                                data['customerClass'] = value
+                            elif 'status' in key:
+                                data['connectionStatus'] = value
+        except Exception as e:
+            print(f"   ⚠ Element extraction error: {e}")
+        
+        # Method 2: Parse the text content line by line
         for line in page_text.split('\n'):
             line = line.strip()
             if ':' not in line:
@@ -437,39 +353,179 @@ class DPDCAutomation:
                 continue
             
             # Map keys to data fields
-            if 'account' in key and 'id' in key:
+            if ('account' in key or 'customer' in key) and 'number' in key and not data['accountId']:
                 data['accountId'] = value
-            elif 'account' in key and not data['accountId']:
-                data['accountId'] = value
-            elif 'name' in key or 'customer name' in key:
+            elif 'name' in key and not data['customerName']:
                 data['customerName'] = value
-            elif 'balance' in key or 'remaining' in key:
+            elif 'balance' in key and not data['balanceRemaining']:
                 data['balanceRemaining'] = value
-            elif 'mobile' in key or 'phone' in key:
+            elif ('mobile' in key or 'phone' in key) and not data['mobileNumber']:
                 data['mobileNumber'] = value
-            elif 'email' in key:
+            elif 'email' in key and not data['emailId']:
                 data['emailId'] = value
-            elif 'class' in key:
+            elif 'class' in key and not data['customerClass']:
                 data['customerClass'] = value
-            elif 'type' in key and 'account' in key:
+            elif 'type' in key and not data['accountType']:
                 data['accountType'] = value
-            elif 'status' in key:
+            elif 'status' in key and not data['connectionStatus']:
                 data['connectionStatus'] = value
             elif 'minimum' in key or 'min' in key:
                 data['minRecharge'] = value
         
-        # Extract using regex patterns as fallback
+        # Method 3: Regex patterns
         if not data['balanceRemaining']:
-            balance_match = re.search(r'(?:balance|remaining)[:\s]+([0-9,.]+)', page_text, re.IGNORECASE)
-            if balance_match:
-                data['balanceRemaining'] = balance_match.group(1)
+            balance_patterns = [
+                r'balance[:\s]+([0-9,.]+)',
+                r'remaining[:\s]+([0-9,.]+)',
+                r'due[:\s]+([0-9,.]+)',
+                r'tk[:\s]+([0-9,.]+)',
+                r'৳[:\s]*([0-9,.]+)'
+            ]
+            for pattern in balance_patterns:
+                match = re.search(pattern, page_text, re.IGNORECASE)
+                if match:
+                    data['balanceRemaining'] = match.group(1)
+                    break
         
         if not data['mobileNumber']:
             mobile_match = re.search(r'(?:mobile|phone)[:\s]+([\d\-+]+)', page_text, re.IGNORECASE)
             if mobile_match:
                 data['mobileNumber'] = mobile_match.group(1)
         
+        # Print what we found
+        found_fields = [k for k, v in data.items() if v]
+        print(f"   ✓ Found {len(found_fields)} fields: {', '.join(found_fields)}")
+        
         return data
+
+    def fetch_usage_data(self, customer_number):
+        try:
+            print(f"\n📡 Fetching data for customer: {customer_number}")
+            
+            # Navigate to homepage
+            print("   → Loading DPDC website...")
+            self.driver.get('https://amiapp.dpdc.org.bd/')
+            self.human_delay(3, 5)
+            
+            # Scroll behavior
+            self.driver.execute_script("window.scrollTo(0, 300);")
+            self.human_delay(1, 2)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            
+            self.driver.save_screenshot('01_homepage.png')
+            
+            # Navigate to Quick Pay
+            print("   → Going to Quick Pay...")
+            self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
+            self.human_delay(4, 6)
+            self.driver.save_screenshot('02_quick_pay.png')
+            
+            # Enter customer number
+            print("   → Entering customer number...")
+            try:
+                # Wait for page to be fully loaded
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                
+                # Find the input field
+                customer_input = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number' or @placeholder]"))
+                )
+                
+                # Clear and focus
+                customer_input.clear()
+                customer_input.click()
+                self.human_delay(0.5, 1)
+                
+                # Type customer number
+                self.human_type(customer_input, customer_number)
+                
+                print(f"   ✓ Entered: {customer_number}")
+                self.human_delay(2, 3)
+                self.driver.save_screenshot('03_after_input.png')
+                
+            except Exception as e:
+                print(f"   ✗ Could not enter customer number: {e}")
+                self.driver.save_screenshot('03_error_input.png')
+                raise
+            
+            # Handle CAPTCHA
+            print("\n🔐 Handling reCAPTCHA...")
+            self.click_captcha_checkbox()
+            self.human_delay(2, 3)
+            
+            # Wait for CAPTCHA to resolve
+            captcha_solved = self.wait_for_captcha_solution(max_wait=60)
+            
+            if captcha_solved:
+                print("   ✓ CAPTCHA appears resolved")
+            else:
+                print("   ⚠ CAPTCHA may not be solved, trying anyway...")
+            
+            self.driver.save_screenshot('04_after_captcha.png')
+            
+            # Submit the form
+            print("\n📤 Submitting form...")
+            try:
+                submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit' or contains(text(), 'Submit') or contains(text(), 'SUBMIT')]")
+                
+                self.human_delay(1, 2)
+                
+                # Try clicking
+                try:
+                    submit_btn.click()
+                except:
+                    self.driver.execute_script("arguments[0].click();", submit_btn)
+                
+                print("   ✓ Submit clicked")
+                
+            except Exception as e:
+                print(f"   ⚠ Could not find submit button, trying Enter key: {e}")
+                customer_input.send_keys(Keys.RETURN)
+            
+            # Wait for results
+            print("\n⏳ Waiting for results...")
+            self.human_delay(8, 12)
+            self.driver.save_screenshot('05_after_submit.png')
+            
+            # Additional wait to ensure data loads
+            self.human_delay(5, 8)
+            self.driver.save_screenshot('06_final_wait.png')
+            
+            # Extract data
+            print("\n📊 Extracting data...")
+            data = self.extract_data_from_page()
+            
+            # Check if we got any data
+            if not any(data.values()):
+                print("   ⚠ No data extracted, check screenshots and HTML files")
+                data['accountId'] = customer_number
+                data['customerName'] = 'Data extraction failed - check artifacts'
+                data['balanceRemaining'] = 'N/A'
+            else:
+                print("   ✓ Data successfully extracted!")
+            
+            return data
+            
+        except Exception as e:
+            print(f"\n✗ Error during fetch: {e}")
+            traceback.print_exc()
+            self.driver.save_screenshot('error_final.png')
+            
+            # Return error data
+            return {
+                'accountId': customer_number,
+                'customerName': f'Error: {str(e)[:100]}',
+                'customerClass': '',
+                'mobileNumber': '',
+                'emailId': '',
+                'accountType': '',
+                'balanceRemaining': 'Error - check artifacts',
+                'connectionStatus': '',
+                'customerType': '',
+                'minRecharge': ''
+            }
 
     def update_google_sheet(self, spreadsheet_id, data):
         try:
@@ -493,16 +549,18 @@ class DPDCAutomation:
             ]
 
             worksheet.append_row(row_data)
-            print(f"✓ Updated at {timestamp}")
+            print(f"✓ Sheet updated at {timestamp}")
+            print(f"   Data: {data}")
             return True
         except Exception as e:
-            print(f"✗ Error: {e}")
-            raise
+            print(f"✗ Sheet update error: {e}")
+            traceback.print_exc()
+            return False
 
     def run(self):
         try:
             print("\n" + "="*60)
-            print("DPDC Automation - Advanced Anti-Detection")
+            print("DPDC Automation - Enhanced Version")
             print(f"Started: {datetime.now()}")
             print("="*60)
 
@@ -513,19 +571,19 @@ class DPDCAutomation:
                 raise Exception("Missing environment variables")
 
             print(f"Customer: {customer_number}")
-            print(f"Sheet: {spreadsheet_id[:10]}...")
+            print(f"Sheet ID: {spreadsheet_id[:10]}...")
 
             data = self.fetch_usage_data(customer_number)
             self.update_google_sheet(spreadsheet_id, data)
 
             print("\n" + "="*60)
-            print("✓ Completed Successfully!")
+            print("✓ Process Completed!")
             print("="*60)
             return True
 
         except Exception as e:
             print("\n" + "="*60)
-            print(f"✗ Failed: {e}")
+            print(f"✗ Process Failed: {e}")
             print("="*60)
             traceback.print_exc()
             return False
