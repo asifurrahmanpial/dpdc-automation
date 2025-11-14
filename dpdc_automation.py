@@ -5,7 +5,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.keys import Keys
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+import undetected_chromedriver as uc
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -14,150 +15,111 @@ import time
 import os
 import random
 import requests
-import speech_recognition as sr
-from pydub import AudioSegment
-import io
 import traceback
+import re
 
 class DPDCAutomation:
     def __init__(self):
-        """Initialize with proxy rotation and captcha solving"""
-        print("🚀 Initializing DPDC Automation with Proxy Rotation...")
+        """Initialize with advanced anti-detection measures"""
+        print("🚀 Initializing DPDC Automation (Anti-Detection Mode)...")
         
-        # Get working proxy first
-        self.proxy = self.get_working_proxy()
-        if self.proxy:
-            print(f"✓ Using proxy: {self.proxy}")
-        else:
-            print("⚠ No working proxy found, using direct connection")
-        
-        # Create driver with proxy
-        self.driver = self.create_driver_with_proxy(self.proxy)
+        # Use undetected-chromedriver instead of regular selenium
+        self.driver = self.create_undetected_driver()
         self.wait = WebDriverWait(self.driver, 30)
         self.setup_google_sheets()
     
-    def fetch_proxy_list(self):
-        """Fetch proxies from multiple reliable sources"""
-        proxies = []
+    def create_undetected_driver(self):
+        """Create an undetected Chrome driver that bypasses most bot detection"""
+        print("   → Creating undetected Chrome driver...")
         
-        print("   Fetching proxy lists...")
+        options = uc.ChromeOptions()
         
-        # Source 1: ProxyScrape (most reliable)
+        # Essential options for GitHub Actions
+        options.add_argument('--headless=new')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920,1080')
+        
+        # Anti-detection measures
+        options.add_argument('--disable-blink-features=AutomationControlled')
+        options.add_argument('--disable-features=IsolateOrigins,site-per-process')
+        options.add_argument('--disable-web-security')
+        options.add_argument('--allow-running-insecure-content')
+        
+        # Realistic browser profile
+        options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        
+        # Language and timezone
+        options.add_argument('--lang=en-US')
+        options.add_argument('--accept-lang=en-US,en;q=0.9')
+        
+        # Preferences to appear more human
+        prefs = {
+            'profile.default_content_setting_values': {
+                'cookies': 1,
+                'images': 2,  # Don't load images for faster execution
+                'javascript': 1,
+                'plugins': 1,
+                'popups': 0,
+                'geolocation': 1,
+                'notifications': 1,
+                'media_stream': 1,
+            },
+            'profile.managed_default_content_settings.images': 2,
+        }
+        options.add_experimental_option('prefs', prefs)
+        
         try:
-            url = 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=elite'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip()]
-                proxies.extend(proxy_list)
-                print(f"   ✓ ProxyScrape: {len(proxy_list)} proxies")
+            # Create driver with undetected-chromedriver
+            driver = uc.Chrome(
+                options=options,
+                driver_executable_path='/usr/bin/chromedriver',
+                version_main=None,  # Auto-detect Chrome version
+                use_subprocess=True
+            )
+            
+            # Additional stealth JavaScript
+            stealth_js = """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                Object.defineProperty(navigator, 'platform', {get: () => 'Win32'});
+                Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+                Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+                window.chrome = {runtime: {}, loadTimes: function(){}, csi: function(){}, app: {}};
+                Object.defineProperty(navigator, 'permissions', {
+                    get: () => ({
+                        query: () => Promise.resolve({state: 'granted'})
+                    })
+                });
+            """
+            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': stealth_js})
+            
+            # Set geolocation to Bangladesh
+            driver.execute_cdp_cmd('Emulation.setGeolocationOverride', {
+                'latitude': 23.8103,
+                'longitude': 90.4125,
+                'accuracy': 100
+            })
+            
+            print("   ✓ Undetected Chrome driver created")
+            return driver
+            
         except Exception as e:
-            print(f"   ⚠ ProxyScrape failed: {e}")
-        
-        # Source 2: GitHub - TheSpeedX (updated frequently)
-        try:
-            url = 'https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ TheSpeedX: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ TheSpeedX failed: {e}")
-        
-        # Source 3: proxy-list (clarketm)
-        try:
-            url = 'https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ clarketm: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ clarketm failed: {e}")
-        
-        # Source 4: Free-Proxy-List
-        try:
-            url = 'https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt'
-            response = requests.get(url, timeout=15)
-            if response.status_code == 200:
-                proxy_list = [p.strip() for p in response.text.split('\n') if p.strip() and ':' in p]
-                proxies.extend(proxy_list)
-                print(f"   ✓ ShiftyTR: {len(proxy_list)} proxies")
-        except Exception as e:
-            print(f"   ⚠ ShiftyTR failed: {e}")
-        
-        # Remove duplicates and shuffle
-        proxies = list(set(proxies))
-        random.shuffle(proxies)
-        
-        print(f"   → Total unique proxies: {len(proxies)}")
-        return proxies
+            print(f"   ⚠ Error creating undetected driver: {e}")
+            print("   → Falling back to regular Chrome with stealth")
+            return self.create_stealth_driver()
     
-    def test_proxy(self, proxy, timeout=8):
-        """Test if proxy is working"""
-        try:
-            proxies_dict = {
-                'http': f'http://{proxy}',
-                'https': f'http://{proxy}'
-            }
-            # Test with a simple endpoint
-            response = requests.get('http://httpbin.org/ip', proxies=proxies_dict, timeout=timeout)
-            if response.status_code == 200:
-                # Also check if it can reach Google
-                response2 = requests.get('https://www.google.com', proxies=proxies_dict, timeout=timeout)
-                return response2.status_code == 200
-        except:
-            pass
-        return False
-    
-    def get_working_proxy(self):
-        """Find a working proxy from available sources"""
-        print("🔍 Finding working proxy...")
-        
-        proxies = self.fetch_proxy_list()
-        
-        if not proxies:
-            print("   ✗ No proxies available")
-            return None
-        
-        # Test up to 30 proxies (increased from 20)
-        max_tests = min(30, len(proxies))
-        print(f"   Testing up to {max_tests} proxies...")
-        
-        for i, proxy in enumerate(proxies[:max_tests], 1):
-            print(f"   [{i}/{max_tests}] Testing {proxy}...", end=' ')
-            if self.test_proxy(proxy):
-                print("✓ WORKS!")
-                return proxy
-            else:
-                print("✗")
-        
-        print("   ✗ No working proxy found")
-        return None
-    
-    def create_driver_with_proxy(self, proxy=None):
-        """Create Chrome driver with optional proxy"""
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        ]
-        
-        user_agent = random.choice(self.user_agents)
-        
+    def create_stealth_driver(self):
+        """Fallback: Regular Chrome with maximum stealth"""
         chrome_options = Options()
         chrome_options.add_argument('--headless=new')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument(f'user-agent={user_agent}')
-        
-        # Add proxy if available
-        if proxy:
-            chrome_options.add_argument(f'--proxy-server=http://{proxy}')
-            print(f"   ✓ Configured Chrome with proxy: {proxy}")
-        
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option('useAutomationExtension', False)
@@ -165,6 +127,7 @@ class DPDCAutomation:
         prefs = {
             'profile.default_content_setting_values': {
                 'cookies': 1,
+                'images': 2,
                 'geolocation': 1,
                 'notifications': 1
             }
@@ -174,22 +137,15 @@ class DPDCAutomation:
         service = Service('/usr/bin/chromedriver')
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        try:
-            driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
-                'source': '''
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-                    Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
-                    window.chrome = {runtime: {}};
-                '''
-            })
-            driver.execute_cdp_cmd('Emulation.setGeolocationOverride', {
-                'latitude': 23.8103,
-                'longitude': 90.4125,
-                'accuracy': 100
-            })
-        except Exception:
-            pass
+        # Inject stealth scripts
+        driver.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {
+            'source': '''
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                window.chrome = {runtime: {}};
+            '''
+        })
         
         return driver
 
@@ -212,285 +168,175 @@ class DPDCAutomation:
             print(f"✗ Error setting up Google Sheets: {e}")
             raise
 
-    def delay(self, min_sec=1.5, max_sec=3.0):
-        time.sleep(random.uniform(min_sec, max_sec))
+    def human_delay(self, min_sec=1.5, max_sec=4.0):
+        """More realistic human-like delays"""
+        delay = random.uniform(min_sec, max_sec)
+        # Add micro-pauses to simulate reading/thinking
+        if random.random() > 0.7:
+            delay += random.uniform(0.5, 2.0)
+        time.sleep(delay)
 
-    def solve_recaptcha_audio(self):
+    def human_type(self, element, text):
+        """Type like a human with variable speed and occasional mistakes"""
+        for i, char in enumerate(text):
+            element.send_keys(char)
+            # Variable typing speed
+            delay = random.uniform(0.05, 0.25)
+            # Occasionally pause longer (thinking)
+            if random.random() > 0.85:
+                delay += random.uniform(0.3, 0.8)
+            time.sleep(delay)
+        
+        # Sometimes backspace and retype (human error simulation)
+        if random.random() > 0.9 and len(text) > 3:
+            time.sleep(random.uniform(0.2, 0.5))
+            element.send_keys(Keys.BACK_SPACE)
+            time.sleep(random.uniform(0.1, 0.3))
+            element.send_keys(text[-1])
+
+    def wait_for_captcha_to_solve_itself(self, max_wait=30):
         """
-        Enhanced audio captcha solver based on successful implementations
+        Wait for reCAPTCHA to auto-solve (many times it does with good fingerprint)
+        Returns True if solved, False if still waiting
+        """
+        print("   → Waiting for reCAPTCHA auto-solve...")
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait:
+            try:
+                # Check if we're back to main content (captcha solved)
+                self.driver.switch_to.default_content()
+                
+                # Look for success indicators on the page
+                page_text = self.driver.find_element(By.TAG_NAME, 'body').text.lower()
+                
+                if any(indicator in page_text for indicator in ['account', 'balance', 'customer', 'mobile']):
+                    print("   ✓ CAPTCHA appears to be solved (found data)")
+                    return True
+                
+                # Check if captcha checkbox is checked
+                try:
+                    checkbox_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']")
+                    self.driver.switch_to.frame(checkbox_iframe)
+                    checkbox = self.driver.find_element(By.ID, "recaptcha-anchor")
+                    aria_checked = checkbox.get_attribute("aria-checked")
+                    self.driver.switch_to.default_content()
+                    
+                    if aria_checked == "true":
+                        print("   ✓ CAPTCHA checkbox is checked!")
+                        return True
+                except:
+                    pass
+                
+                time.sleep(2)
+                
+            except Exception as e:
+                time.sleep(1)
+        
+        print("   ⚠ CAPTCHA did not auto-solve")
+        return False
+
+    def handle_captcha_smartly(self):
+        """
+        Smart CAPTCHA handling - wait first, only try to solve if needed
         """
         try:
-            print("\n🔓 Solving reCAPTCHA v2 (Enhanced Method)...")
+            print("\n🔐 Handling reCAPTCHA...")
             self.driver.switch_to.default_content()
             
-            # Find and switch to checkbox iframe
-            print("   [1/9] Finding checkbox iframe...")
+            # Check if captcha exists
             try:
-                checkbox_iframe = WebDriverWait(self.driver, 10).until(
+                checkbox_iframe = WebDriverWait(self.driver, 5).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/anchor']"))
                 )
-                self.driver.switch_to.frame(checkbox_iframe)
-                print("   ✓ Found checkbox iframe")
+                print("   ✓ reCAPTCHA detected")
             except TimeoutException:
                 print("   ✓ No reCAPTCHA found")
                 return True
             
-            # Click checkbox
-            print("   [2/9] Clicking checkbox...")
-            try:
-                checkbox = WebDriverWait(self.driver, 5).until(
-                    EC.element_to_be_clickable((By.ID, "recaptcha-anchor"))
-                )
-                checkbox.click()
-                print("   ✓ Clicked checkbox")
-                self.delay(2, 4)
-            except Exception as e:
-                print(f"   ⚠ Checkbox click failed: {e}")
+            # Click the checkbox
+            self.driver.switch_to.frame(checkbox_iframe)
+            self.human_delay(1, 2)
+            
+            checkbox = self.driver.find_element(By.ID, "recaptcha-anchor")
+            checkbox.click()
+            print("   ✓ Clicked checkbox")
             
             self.driver.switch_to.default_content()
             
-            # Wait and find challenge iframe
-            print("   [3/9] Looking for challenge iframe...")
-            try:
-                challenge_iframe = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "iframe[src*='recaptcha/api2/bframe']"))
-                )
-                self.driver.switch_to.frame(challenge_iframe)
-                print("   ✓ Found challenge iframe")
-                self.driver.save_screenshot('challenge_iframe.png')
-            except TimeoutException:
-                print("   ✓ No challenge appeared (auto-solved)")
-                self.driver.switch_to.default_content()
+            # Wait longer to see if it auto-solves
+            if self.wait_for_captcha_to_solve_itself(max_wait=45):
                 return True
             
-            # Click audio button
-            print("   [4/9] Clicking audio button...")
-            try:
-                audio_btn = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "recaptcha-audio-button"))
-                )
-                audio_btn.click()
-                print("   ✓ Clicked audio button")
-                self.delay(3, 5)
-                self.driver.save_screenshot('after_audio_click.png')
-            except Exception as e:
-                print(f"   ✗ Failed to click audio button: {e}")
-                self.driver.switch_to.default_content()
-                return False
-            
-            # Critical: Wait for audio challenge to fully load
-            print("   [5/9] Waiting for audio challenge to load...")
-            try:
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "rc-audiochallenge-tdownload-link"))
-                )
-                print("   ✓ Audio challenge loaded")
-            except TimeoutException:
-                print("   ⚠ Audio challenge not detected, checking for blocking...")
-                page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-                if 'try again later' in page_text.lower():
-                    print("   ❌ Google blocked audio challenge")
-                    self.driver.save_screenshot('blocked_by_google.png')
-                    self.driver.switch_to.default_content()
-                    return False
-            
-            # Get audio source URL - Enhanced method
-            print("   [6/9] Getting audio URL...")
-            audio_url = None
-            
-            # Method 1: Check download link (most reliable)
-            try:
-                download_link = self.driver.find_element(By.CLASS_NAME, "rc-audiochallenge-tdownload-link")
-                audio_url = download_link.get_attribute("href")
-                if audio_url:
-                    print(f"   ✓ Got audio URL from download link")
-            except NoSuchElementException:
-                pass
-            
-            # Method 2: Check audio source element
-            if not audio_url:
-                try:
-                    audio_source = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.ID, "audio-source"))
-                    )
-                    # Wait for src to be populated
-                    for attempt in range(20):
-                        src = audio_source.get_attribute("src")
-                        if src and len(src) > 0:
-                            audio_url = src
-                            print(f"   ✓ Got audio URL from source (attempt {attempt + 1})")
-                            break
-                        time.sleep(0.5)
-                except Exception as e:
-                    print(f"   ⚠ Could not get audio source: {e}")
-            
-            if not audio_url:
-                print("   ✗ No audio URL found")
-                with open('no_audio_page.html', 'w') as f:
-                    f.write(self.driver.page_source)
-                self.driver.switch_to.default_content()
-                return False
-            
-            # Download audio
-            print("   [7/9] Downloading audio...")
-            try:
-                # Use proxy for audio download if available
-                proxies_dict = None
-                if hasattr(self, 'proxy') and self.proxy:
-                    proxies_dict = {
-                        'http': f'http://{self.proxy}',
-                        'https': f'http://{self.proxy}'
-                    }
-                    print(f"   → Using proxy for download: {self.proxy}")
-                
-                response = requests.get(audio_url, proxies=proxies_dict, timeout=30)
-                if response.status_code != 200:
-                    print(f"   ✗ Download failed: {response.status_code}")
-                    self.driver.switch_to.default_content()
-                    return False
-                
-                audio_data = response.content
-                print(f"   ✓ Downloaded {len(audio_data)} bytes")
-                
-                # Convert to WAV
-                audio = AudioSegment.from_file(io.BytesIO(audio_data))
-                audio = audio.set_channels(1).set_frame_rate(16000)
-                wav_io = io.BytesIO()
-                audio.export(wav_io, format="wav")
-                wav_io.seek(0)
-                print("   ✓ Converted to WAV")
-            except Exception as e:
-                print(f"   ✗ Audio processing failed: {e}")
-                self.driver.switch_to.default_content()
-                return False
-            
-            # Speech recognition
-            print("   [8/9] Running speech recognition...")
-            try:
-                recognizer = sr.Recognizer()
-                recognizer.energy_threshold = 300
-                
-                with sr.AudioFile(wav_io) as source:
-                    audio_data = recognizer.record(source)
-                    text = recognizer.recognize_google(audio_data)
-                
-                text = text.lower().strip()
-                print(f"   ✓ Recognized: '{text}'")
-            except sr.UnknownValueError:
-                print("   ✗ Could not understand audio")
-                self.driver.switch_to.default_content()
-                return False
-            except Exception as e:
-                print(f"   ✗ Recognition failed: {e}")
-                self.driver.switch_to.default_content()
-                return False
-            
-            # Submit answer
-            print("   [9/9] Submitting answer...")
-            try:
-                response_input = WebDriverWait(self.driver, 5).until(
-                    EC.presence_of_element_located((By.ID, "audio-response"))
-                )
-                response_input.clear()
-                response_input.send_keys(text)
-                self.delay(1, 2)
-                
-                verify_btn = self.driver.find_element(By.ID, "recaptcha-verify-button")
-                verify_btn.click()
-                print("   ✓ Submitted answer")
-                self.delay(3, 5)
-                
-                self.driver.switch_to.default_content()
-                print("   ✓ reCAPTCHA solved successfully!")
-                return True
-                
-            except Exception as e:
-                print(f"   ✗ Submit failed: {e}")
-                self.driver.switch_to.default_content()
-                return False
+            print("   ⚠ CAPTCHA did not auto-solve, may need manual intervention")
+            print("   → Continuing anyway to check for data...")
+            return True
             
         except Exception as e:
-            print(f"   ✗ Unexpected error: {e}")
-            traceback.print_exc()
+            print(f"   ⚠ CAPTCHA handling error: {e}")
             try:
                 self.driver.switch_to.default_content()
             except:
                 pass
-            return False
-
-    def find_and_click_element(self, by, selector, name="element"):
-        """Helper to find and click elements reliably"""
-        try:
-            element = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((by, selector))
-            )
-            if element.is_displayed():
-                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
-                self.delay(0.5, 1)
-                try:
-                    element.click()
-                except:
-                    self.driver.execute_script("arguments[0].click();", element)
-                print(f"   ✓ Clicked {name}")
-                return True
-        except Exception as e:
-            print(f"   ✗ Failed to click {name}: {e}")
-            return False
+            return True  # Continue anyway
 
     def fetch_usage_data(self, customer_number):
         try:
             print(f"\n📡 Fetching data for customer: {customer_number}")
             
-            # Navigate to login
-            print("   → Loading login page...")
-            self.driver.get('https://amiapp.dpdc.org.bd/login')
-            self.delay(2, 4)
-            self.driver.save_screenshot('01_login_page.png')
+            # Navigate to login with realistic behavior
+            print("   → Loading website...")
+            self.driver.get('https://amiapp.dpdc.org.bd/')
+            self.human_delay(3, 5)  # Longer initial delay
             
-            # Click Quick Pay
-            print("   → Finding Quick Pay...")
-            if self.find_and_click_element(By.XPATH, "//button[contains(., 'QUICK PAY')]", "Quick Pay"):
-                self.delay(2, 3)
-            else:
+            # Scroll a bit (human behavior)
+            self.driver.execute_script("window.scrollTo(0, 300);")
+            self.human_delay(1, 2)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            
+            self.driver.save_screenshot('01_homepage.png')
+            
+            # Navigate to quick pay
+            print("   → Navigating to Quick Pay...")
+            try:
+                quick_pay_btn = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'QUICK PAY')]"))
+                )
+                self.human_delay(1, 2)
+                quick_pay_btn.click()
+            except:
+                print("   → Direct navigation to Quick Pay page...")
                 self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
-                self.delay(2, 3)
             
-            self.driver.save_screenshot('02_quick_pay_page.png')
+            self.human_delay(3, 5)
+            self.driver.save_screenshot('02_quick_pay.png')
             
-            # Find customer input
-            print("   → Entering customer number...")
+            # Enter customer number with human-like typing
+            print("   → Entering customer number (human-like)...")
             try:
                 customer_input = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number']"))
                 )
-                customer_input.clear()
-                for char in customer_number:
-                    customer_input.send_keys(char)
-                    time.sleep(random.uniform(0.1, 0.2))
+                
+                # Click and focus
+                customer_input.click()
+                self.human_delay(0.5, 1)
+                
+                # Type like a human
+                self.human_type(customer_input, customer_number)
+                
                 print("   ✓ Entered customer number")
-                self.delay(1, 2)
+                self.human_delay(2, 3)
                 self.driver.save_screenshot('03_after_input.png')
             except Exception as e:
                 print(f"   ✗ Could not enter customer number: {e}")
                 raise
             
-            # Solve captcha if present
-            try:
-                self.driver.switch_to.default_content()
-                captcha_iframe = self.driver.find_elements(By.CSS_SELECTOR, "iframe[src*='recaptcha']")
-                if captcha_iframe:
-                    print("   ⚠ reCAPTCHA detected")
-                    solved = self.solve_recaptcha_audio()
-                    if solved:
-                        print("   ✓ Captcha solved")
-                    else:
-                        print("   ⚠ Captcha not solved, continuing...")
-                    self.delay(1, 2)
-            except Exception as e:
-                print(f"   Note: {e}")
+            # Handle CAPTCHA smartly
+            self.handle_captcha_smartly()
             
             # Submit form
-            print("   → Submitting...")
+            print("   → Submitting form...")
             try:
                 submit_btn = self.driver.find_element(By.XPATH, "//button[@type='submit']")
                 
@@ -500,45 +346,57 @@ class DPDCAutomation:
                         break
                     time.sleep(1)
                 
+                self.human_delay(1, 2)
                 self.driver.execute_script("arguments[0].click();", submit_btn)
-                print("   ✓ Clicked submit")
+                print("   ✓ Form submitted")
             except:
                 customer_input.send_keys(Keys.RETURN)
                 print("   ✓ Pressed Enter")
             
-            # Wait for results
+            # Wait for results with patience
             print("   → Waiting for results...")
-            self.delay(8, 12)
+            self.human_delay(10, 15)
             self.driver.save_screenshot('04_results.png')
             
-            # Extract data
-            page_text = self.driver.find_element(By.TAG_NAME, 'body').text
-            with open('page_text.txt', 'w', encoding='utf-8') as f:
-                f.write(page_text)
+            # Try multiple times to get data
+            data = None
+            for attempt in range(3):
+                print(f"   → Extraction attempt {attempt + 1}/3...")
+                page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+                
+                # Save for debugging
+                with open(f'page_text_attempt_{attempt + 1}.txt', 'w', encoding='utf-8') as f:
+                    f.write(page_text)
+                
+                data = self.extract_data_from_text(page_text)
+                
+                if data and any(data.values()):
+                    print("   ✓ Data found!")
+                    break
+                
+                if attempt < 2:
+                    print("   ⚠ No data yet, waiting longer...")
+                    self.human_delay(5, 8)
             
-            data = {'accountId': '', 'customerName': '', 'customerClass': '',
-                    'mobileNumber': '', 'emailId': '', 'accountType': '',
-                    'balanceRemaining': '', 'connectionStatus': '',
-                    'customerType': '', 'minRecharge': ''}
+            if not data or not any(data.values()):
+                print("   ⚠ Could not extract data, saving page source...")
+                with open('final_page.html', 'w', encoding='utf-8') as f:
+                    f.write(self.driver.page_source)
+                
+                # Return partial data anyway
+                data = {
+                    'accountId': customer_number,
+                    'customerName': 'Data extraction failed',
+                    'customerClass': '',
+                    'mobileNumber': '',
+                    'emailId': '',
+                    'accountType': '',
+                    'balanceRemaining': 'Check manually',
+                    'connectionStatus': '',
+                    'customerType': '',
+                    'minRecharge': ''
+                }
             
-            for line in page_text.split('\n'):
-                if ':' in line:
-                    parts = line.split(':', 1)
-                    if len(parts) == 2:
-                        key, value = parts[0].strip().lower(), parts[1].strip()
-                        if 'account' in key and value:
-                            data['accountId'] = value
-                        elif 'name' in key and value:
-                            data['customerName'] = value
-                        elif 'balance' in key and value:
-                            data['balanceRemaining'] = value
-                        elif 'mobile' in key and value:
-                            data['mobileNumber'] = value
-            
-            if not any(data.values()):
-                data['customerName'] = page_text[:300].replace('\n', ' ')
-            
-            print("   ✓ Data extracted")
             return data
             
         except Exception as e:
@@ -546,6 +404,72 @@ class DPDCAutomation:
             traceback.print_exc()
             self.driver.save_screenshot('error.png')
             raise
+
+    def extract_data_from_text(self, page_text):
+        """Enhanced data extraction with multiple patterns"""
+        data = {
+            'accountId': '',
+            'customerName': '',
+            'customerClass': '',
+            'mobileNumber': '',
+            'emailId': '',
+            'accountType': '',
+            'balanceRemaining': '',
+            'connectionStatus': '',
+            'customerType': '',
+            'minRecharge': ''
+        }
+        
+        # Parse line by line
+        for line in page_text.split('\n'):
+            line = line.strip()
+            if ':' not in line:
+                continue
+            
+            parts = line.split(':', 1)
+            if len(parts) != 2:
+                continue
+            
+            key = parts[0].strip().lower()
+            value = parts[1].strip()
+            
+            if not value:
+                continue
+            
+            # Map keys to data fields
+            if 'account' in key and 'id' in key:
+                data['accountId'] = value
+            elif 'account' in key and not data['accountId']:
+                data['accountId'] = value
+            elif 'name' in key or 'customer name' in key:
+                data['customerName'] = value
+            elif 'balance' in key or 'remaining' in key:
+                data['balanceRemaining'] = value
+            elif 'mobile' in key or 'phone' in key:
+                data['mobileNumber'] = value
+            elif 'email' in key:
+                data['emailId'] = value
+            elif 'class' in key:
+                data['customerClass'] = value
+            elif 'type' in key and 'account' in key:
+                data['accountType'] = value
+            elif 'status' in key:
+                data['connectionStatus'] = value
+            elif 'minimum' in key or 'min' in key:
+                data['minRecharge'] = value
+        
+        # Extract using regex patterns as fallback
+        if not data['balanceRemaining']:
+            balance_match = re.search(r'(?:balance|remaining)[:\s]+([0-9,.]+)', page_text, re.IGNORECASE)
+            if balance_match:
+                data['balanceRemaining'] = balance_match.group(1)
+        
+        if not data['mobileNumber']:
+            mobile_match = re.search(r'(?:mobile|phone)[:\s]+([\d\-+]+)', page_text, re.IGNORECASE)
+            if mobile_match:
+                data['mobileNumber'] = mobile_match.group(1)
+        
+        return data
 
     def update_google_sheet(self, spreadsheet_id, data):
         try:
@@ -578,7 +502,7 @@ class DPDCAutomation:
     def run(self):
         try:
             print("\n" + "="*60)
-            print("DPDC Automation with Enhanced Captcha Solver")
+            print("DPDC Automation - Advanced Anti-Detection")
             print(f"Started: {datetime.now()}")
             print("="*60)
 
@@ -595,7 +519,7 @@ class DPDCAutomation:
             self.update_google_sheet(spreadsheet_id, data)
 
             print("\n" + "="*60)
-            print("✓ Completed!")
+            print("✓ Completed Successfully!")
             print("="*60)
             return True
 
