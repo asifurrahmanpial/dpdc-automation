@@ -406,19 +406,50 @@ class DPDCAutomation:
             print("   → Loading DPDC website...")
             self.driver.get('https://amiapp.dpdc.org.bd/')
             self.human_delay(3, 5)
-            
-            # Scroll behavior
-            self.driver.execute_script("window.scrollTo(0, 300);")
-            self.human_delay(1, 2)
-            self.driver.execute_script("window.scrollTo(0, 0);")
-            
             self.driver.save_screenshot('01_homepage.png')
             
-            # Navigate to Quick Pay
-            print("   → Going to Quick Pay...")
-            self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
-            self.human_delay(4, 6)
-            self.driver.save_screenshot('02_quick_pay.png')
+            # Click QUICK PAY button
+            print("   → Clicking QUICK PAY button...")
+            try:
+                # Try multiple selectors for the Quick Pay button
+                quick_pay_clicked = False
+                
+                # Method 1: Look for button with text "QUICK PAY"
+                try:
+                    quick_pay_btn = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'QUICK PAY')]"))
+                    )
+                    self.human_delay(1, 2)
+                    quick_pay_btn.click()
+                    quick_pay_clicked = True
+                    print("   ✓ Clicked QUICK PAY button (method 1)")
+                except:
+                    pass
+                
+                # Method 2: Look for any element with "QUICK PAY" text
+                if not quick_pay_clicked:
+                    try:
+                        quick_pay_elem = self.driver.find_element(By.XPATH, "//*[contains(text(), 'QUICK PAY')]")
+                        quick_pay_elem.click()
+                        quick_pay_clicked = True
+                        print("   ✓ Clicked QUICK PAY element (method 2)")
+                    except:
+                        pass
+                
+                # Method 3: Direct navigation as fallback
+                if not quick_pay_clicked:
+                    print("   → Direct navigation to Quick Pay page...")
+                    self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
+                
+                self.human_delay(4, 6)
+                self.driver.save_screenshot('02_quick_pay.png')
+                
+            except Exception as e:
+                print(f"   ⚠ Error navigating to Quick Pay: {e}")
+                print("   → Trying direct URL...")
+                self.driver.get('https://amiapp.dpdc.org.bd/quick-pay')
+                self.human_delay(4, 6)
+                self.driver.save_screenshot('02_quick_pay_fallback.png')
             
             # Enter customer number
             print("   → Entering customer number...")
@@ -428,10 +459,41 @@ class DPDCAutomation:
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
                 
-                # Find the input field
-                customer_input = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, "//input[@type='text' or @type='number' or @placeholder]"))
-                )
+                # Wait a bit more for any JS to finish
+                self.human_delay(2, 3)
+                
+                # Find the input field - be more specific to avoid search bar
+                customer_input = None
+                
+                # Method 1: Look for input in the Quick Pay form area
+                try:
+                    customer_input = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, "//input[@type='text' and not(contains(@placeholder, 'Search'))]"))
+                    )
+                    print("   ✓ Found customer input field (method 1)")
+                except:
+                    pass
+                
+                # Method 2: Look for input by placeholder containing "customer" or "account"
+                if not customer_input:
+                    try:
+                        customer_input = self.driver.find_element(By.XPATH, "//input[contains(@placeholder, 'ustomer') or contains(@placeholder, 'ccount') or contains(@placeholder, 'umber')]")
+                        print("   ✓ Found customer input field (method 2)")
+                    except:
+                        pass
+                
+                # Method 3: Get all inputs and use the first one that's not a search box
+                if not customer_input:
+                    inputs = self.driver.find_elements(By.XPATH, "//input[@type='text' or @type='number']")
+                    for inp in inputs:
+                        placeholder = inp.get_attribute('placeholder') or ''
+                        if 'search' not in placeholder.lower():
+                            customer_input = inp
+                            print("   ✓ Found customer input field (method 3)")
+                            break
+                
+                if not customer_input:
+                    raise Exception("Could not find customer number input field")
                 
                 # Clear and focus
                 customer_input.clear()
